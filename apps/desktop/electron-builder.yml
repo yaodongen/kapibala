@@ -2,6 +2,8 @@ appId: com.kapibala.app
 productName: Kapibala
 copyright: Kapibala
 
+afterSign: build/after-sign.cjs
+
 directories:
   output: release
   buildResources: build
@@ -21,6 +23,8 @@ mac:
     - target: dmg
       arch: [arm64]
   darkModeSupport: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     # 读 iCloud 云盘里的库时，macOS 会弹权限确认。这几句是弹窗里显示的理由，
     # 不写就用系统的默认文案。权限本身躲不掉，只能说清楚为什么要。
@@ -33,16 +37,24 @@ mac:
       Kapibala 只在你把库建在“下载”文件夹时才需要这项权限。
     NSRemovableVolumesUsageDescription: >-
       Kapibala 只在你把库放在外置硬盘上时才需要这项权限。
-  # 没有开发者证书时用 ad-hoc 签名，本机能直接跑；分发给别人才需要真证书 + 公证
-  identity: null
+  # "-" = ad-hoc 签名。不能用 null（那是完全跳过签名，改完 bundle 后封装是坏的，
+  # 下载下来会被 Gatekeeper 报"已损坏"）。分发给别人仍需真证书 + 公证。
+  identity: "-"
 
 dmg:
-  title: Kapibala
+  title: Kapibala ${version}
+  # 一眼能看出是安装包：app 图标 + 装入角标。挂载后桌面上那个卷用的也是它
+  icon: ../../ui/dmg.icns
+  background: build/background.tiff
+  iconSize: 100
+  window:
+    width: 540
+    height: 380
   contents:
-    - x: 140
+    - x: 148
       y: 190
       type: file
-    - x: 400
+    - x: 408
       y: 190
       type: link
       path: /Applications

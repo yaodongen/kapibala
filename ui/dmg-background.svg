@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 380" width="540" height="380">
+  <rect width="540" height="380" fill="#F7EEE0"/>
+  <text x="270" y="72" text-anchor="middle" font-size="19" font-weight="600" fill="#6B5636"
+        font-family="-apple-system, 'PingFang SC', sans-serif">把 Kapibala 拖到「应用程序」</text>
+  <text x="270" y="100" text-anchor="middle" font-size="13" fill="#A2937C"
+        font-family="-apple-system, 'PingFang SC', sans-serif">安装完可以推出这个磁盘映像</text>
+  <!-- 两个图标位之间的箭头 -->
+  <g stroke="#C2AE8E" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M238 190h58"/>
+    <path d="M282 174l16 16-16 16"/>
+  </g>
+  <!-- 图标位的浅色底托，暗示"放这里" -->
+  <g fill="none" stroke="#E4D6BC" stroke-width="3" stroke-dasharray="7 7">
+    <rect x="98" y="140" width="100" height="100" rx="20"/>
+    <rect x="358" y="140" width="100" height="100" rx="20"/>
+  </g>
+</svg>

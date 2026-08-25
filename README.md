@@ -4,7 +4,18 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用。没有账号，�
 
 **最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步了：同步交给早就做得很好的 iCloud，Kapibala 只负责让几台机器同时写也不会弄坏数据。
 
-## 1. 快速开始
+## 1. 下载
+
+到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载最新的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
+
+仅支持 Apple Silicon（arm64）。
+
+> 这个包还没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
+>
+> - 双击一次（会被拒），然后到 **系统设置 → 隐私与安全性**，在下方点「仍要打开」
+> - 或者终端里一句：`xattr -dr com.apple.quarantine /Applications/Kapibala.app`
+
+## 2. 快速开始
 
 1. 打开 Kapibala，选一个文件夹作为你的「库」，任务都存在这里。
 2. 想多台 Mac 同步，就选一个 iCloud Drive 里的目录，比如 `~/Library/Mobile Documents/com~apple~CloudDocs/Kapibala`。在另一台 Mac 上打开同一个目录即可。
@@ -14,7 +25,7 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用。没有账号，�
 
 想备份？`cp -r` 或者 Time Machine。想不用了？删掉 App，数据还是你的。
 
-## 2. 功能
+## 3. 功能
 
 **任务**
 
@@ -26,22 +37,11 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用。没有账号，�
 
 **视图**
 
-- 收件箱
 - 今天
 - **最近 7 天**：按日期 + 周几分组，最近的排在最前，逾期任务单独置顶一组
-- **全部任务**：按清单分组，可折叠
+- 全部任务
 - 已完成
 - 垃圾桶
-
-## 3. 命令行
-
-`kapi` 和界面共用同一个库、同一份数据。
-
-```bash
-kapi add "写周报" --at fri --repeat weekly
-kapi today
-kapi done <id>
-```
 
 ## 4. 隐私
 

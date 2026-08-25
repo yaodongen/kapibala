@@ -179,7 +179,7 @@ kapibala/
 ├── docs/
 │   ├── storage.zh.md
 │   └── architecture.zh.md
-└── README.zh.md
+└── README.md
 ```
 
 依赖方向是单向的，用 ESLint 的 `no-restricted-imports` 钉死：
