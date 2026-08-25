@@ -98,12 +98,13 @@ e2e:
 
 APP := apps/desktop/release/mac-arm64/Kapibala.app
 
+# 本地只出本机架构。CI 里不带 --arm64，两个架构都出
 app:
-	@bash scripts/pack.sh --dir
+	@bash scripts/pack.sh --dir --arm64
 	@echo "→ $(APP)"
 
 dmg:
-	@bash scripts/pack.sh --mac dmg
+	@bash scripts/pack.sh --mac dmg --arm64
 	@ls apps/desktop/release/*.dmg
 
 

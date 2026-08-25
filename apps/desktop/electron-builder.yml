@@ -19,9 +19,11 @@ mac:
   icon: ../../ui/Kapibala.icns
   target:
     - target: dir
-      arch: [arm64]
+      arch: [arm64, x64]
     - target: dmg
-      arch: [arm64]
+      arch: [arm64, x64]
+  # 两个架构各出一个 dmg，名字里必须带 arch，否则 x64 那份默认不带后缀、认不出来
+  artifactName: ${productName}-${version}-${arch}.${ext}
   darkModeSupport: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist

@@ -61,19 +61,18 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          draft: true          # 先出草稿，自己看一眼再点发布
+          draft: false         # 直接发布。make tag 已经有四道检查，不需要再加一道人工确认
           generate_release_notes: true
           body: |
             ## 安装
 
-            下载 dmg，拖进「应用程序」。
+            Apple 芯片下载 `arm64`，Intel 芯片下载 `x64`。拖进「应用程序」即可。
 
             > **这个包没有经过 Apple 公证**，首次打开会被 Gatekeeper 拦下。两种办法：
             >
             > - 双击一次（会被拒），然后到「系统设置 → 隐私与安全性」，在下方点「仍要打开」
             > - 或者终端里一句：`xattr -dr com.apple.quarantine /Applications/Kapibala.app`
 
-            仅 Apple Silicon（arm64）。
           files: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.blockmap

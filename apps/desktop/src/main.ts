@@ -132,7 +132,8 @@ app.whenReady().then(async () => {
   await boot()
   const w = createWindow()
   w.webContents.once('did-finish-load', async () => {
-    if (!store) await pickVault()
+    // 没有库时不要直接弹系统对话框 —— 用户还不知道这个文件夹是干什么的。
+    // 渲染进程会显示引导页，由用户点按钮再触发 vault:pick
     push()
     // 开发期自检钩子。打包后一律失效，不留在成品里
     if (!app.isPackaged) await selfTest(w)

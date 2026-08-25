@@ -6,9 +6,14 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 
 ## 1. 下载
 
-到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载最新的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
+到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
 
-仅支持 Apple Silicon（arm64）。
+| 你的 Mac | 下载 |
+| --- | --- |
+| Apple 芯片（M 系列） | `Kapibala-*-arm64.dmg` |
+| Intel 芯片 | `Kapibala-*-x64.dmg` |
+
+不确定的话，点左上角  → 「关于本机」，看「芯片」或「处理器」那一行。
 
 > 这个包还没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
 >

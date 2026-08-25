@@ -152,9 +152,25 @@ ti.addEventListener('keydown', async (e) => {
 
 kapi.onTasksChanged((t) => { tasks = t; render() })
 
+/** 没有库时先讲清楚为什么要选文件夹，再由用户点按钮触发系统对话框 */
+function showWelcome(on: boolean) {
+  ;($('welcome') as HTMLElement).hidden = !on
+  ;(document.querySelector('.app') as HTMLElement).style.visibility = on ? 'hidden' : 'visible'
+}
+
+$('pick').addEventListener('click', async () => {
+  const v = await kapi['vault:pick']()
+  if (!v) return                        // 用户取消了，留在引导页
+  vault = v
+  tasks = await kapi['task:list']()
+  showWelcome(false)
+  render()
+  ti.focus()
+})
+
 async function boot() {
   vault = await kapi['vault:state']()
-  if (!vault) vault = await kapi['vault:pick']()
+  if (!vault) { showWelcome(true); return }
   tasks = await kapi['task:list']()
   render()
   ti.focus()

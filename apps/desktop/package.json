@@ -1,14 +1,14 @@
 {
   "name": "kapibala-desktop",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "start": "electron .",
     "dev": "node build.mjs && electron .",
-    "app": "bash ../../scripts/pack.sh --dir",
-    "dmg": "bash ../../scripts/pack.sh --mac dmg"
+    "app": "bash ../../scripts/pack.sh --dir --arm64",
+    "dmg": "bash ../../scripts/pack.sh --mac dmg --arm64 --x64"
   },
   "devDependencies": {
     "electron": "^38",
