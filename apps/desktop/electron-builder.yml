@@ -1,0 +1,48 @@
+appId: com.kapibala.app
+productName: Kapibala
+copyright: Kapibala
+
+directories:
+  output: release
+  buildResources: build
+
+# 主进程/preload/渲染进程都已被 esbuild 打成单文件，所以只需要这两样，
+# 不需要 node_modules（也就绕过了 pnpm 符号链接和 electron-builder 的老问题）
+files:
+  - dist/**
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  icon: ../../ui/Kapibala.icns
+  target:
+    - target: dir
+      arch: [arm64]
+    - target: dmg
+      arch: [arm64]
+  darkModeSupport: true
+  extendInfo:
+    # 读 iCloud 云盘里的库时，macOS 会弹权限确认。这几句是弹窗里显示的理由，
+    # 不写就用系统的默认文案。权限本身躲不掉，只能说清楚为什么要。
+    NSFileProviderDomainUsageDescription: >-
+      Kapibala 需要读写你选定的库文件夹。库放在 iCloud 云盘里时，多台 Mac 才能自动同步。
+      所有数据只留在这个文件夹和本机，不会上传到任何第三方服务器。
+    NSDocumentsFolderUsageDescription: >-
+      Kapibala 需要读写你选定的库文件夹。如果库建在“文稿”里，就需要这项权限。
+    NSDownloadsFolderUsageDescription: >-
+      Kapibala 只在你把库建在“下载”文件夹时才需要这项权限。
+    NSRemovableVolumesUsageDescription: >-
+      Kapibala 只在你把库放在外置硬盘上时才需要这项权限。
+  # 没有开发者证书时用 ad-hoc 签名，本机能直接跑；分发给别人才需要真证书 + 公证
+  identity: null
+
+dmg:
+  title: Kapibala
+  contents:
+    - x: 140
+      y: 190
+      type: file
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications

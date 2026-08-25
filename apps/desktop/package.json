@@ -1,0 +1,24 @@
+{
+  "name": "kapibala-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "electron .",
+    "dev": "node build.mjs && electron .",
+    "app": "bash ../../scripts/pack.sh --dir",
+    "dmg": "bash ../../scripts/pack.sh --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^38",
+    "esbuild": "^0.28",
+    "@kapibala/core": "workspace:*",
+    "@kapibala/adapters-node": "workspace:*",
+    "@kapibala/ipc": "workspace:*",
+    "electron-builder": "^26"
+  },
+  "description": "卡皮巴拉 —— 任务存在你自己的文件夹里",
+  "author": "Kapibala",
+  "license": "MIT"
+}

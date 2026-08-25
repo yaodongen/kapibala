@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- 菜单栏 template 图标：侧面剪影。低而短的吻部 + 高一点的头骨 = 侧脸的台阶感 -->
+  <mask id="cut">
+    <rect width="16" height="16" fill="#fff"/>
+    <circle cx="8.7" cy="7.5" r=".95" fill="#000"/>
+  </mask>
+  <g fill="currentColor" mask="url(#cut)">
+    <circle cx="11.5" cy="4.1" r="1.35"/>
+    <rect x="2.3" y="8.1" width="5.2" height="3.7" rx="1.7"/>
+    <rect x="5.5" y="4.3" width="8.2" height="7.6" rx="3.3"/>
+  </g>
+</svg>

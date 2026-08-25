@@ -1,0 +1,14 @@
+{
+  "name": "kapi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kapi": "./src/index.ts"
+  },
+  "dependencies": {
+    "@kapibala/core": "workspace:*",
+    "@kapibala/adapters-node": "workspace:*"
+  },
+  "license": "MIT"
+}
