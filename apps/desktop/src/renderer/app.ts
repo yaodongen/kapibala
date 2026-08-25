@@ -159,13 +159,19 @@ function showWelcome(on: boolean) {
 }
 
 $('pick').addEventListener('click', async () => {
-  const v = await kapi['vault:pick']()
-  if (!v) return                        // 用户取消了，留在引导页
-  vault = v
-  tasks = await kapi['task:list']()
-  showWelcome(false)
-  render()
-  ti.focus()
+  const hint = $('welcome').querySelector('.hint') as HTMLElement
+  try {
+    const v = await kapi['vault:pick']()
+    if (!v) return                      // 用户取消或选了不能用的目录，留在引导页
+    vault = v
+    tasks = await kapi['task:list']()
+    showWelcome(false)
+    render()
+    ti.focus()
+  } catch (e) {
+    // 整段都要包住：不 catch 的话异常烂在这里，用户只看到点了没反应
+    hint.textContent = `打不开这个文件夹：${(e as Error).message}`
+  }
 })
 
 async function boot() {

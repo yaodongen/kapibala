@@ -9,6 +9,12 @@ const dec = <T,>(b: Uint8Array | null): T | null => {
   try { return JSON.parse(new TextDecoder().decode(b)) as T } catch { return null }
 }
 
+/** 判断"空目录"时要忽略的系统垃圾。Finder 逛一遍就会留下 .DS_Store，
+ *  拿它当"非空"会把用户挡在门外 */
+const JUNK = new Set(['.DS_Store', '.localized', 'Icon\r', '.Trashes', '.fseventsd',
+                      '.Spotlight-V100', '.TemporaryItems', 'desktop.ini', 'Thumbs.db'])
+export const isJunk = (name: string) => JUNK.has(name) || name.endsWith('.icloud')
+
 export const registryPath = (userDataDir: string) => `${userDataDir}/vaults.json`
 
 export async function readRegistry(env: Env): Promise<VaultsFile> {
@@ -67,8 +73,9 @@ async function upsertEntry(env: Env, entry: VaultEntry): Promise<void> {
 export async function createVault(env: Env, vaultPath: string, name?: string): Promise<OpenResult> {
   const existing = dec<VaultMeta>(await env.fs.readFile(`${vaultPath}/.kapibala/meta.json`))
   if (existing) return openVault(env, vaultPath)
-  const entries = await env.fs.readDir(vaultPath)
-  if (entries.length) throw new Error(`目录非空，拒绝在这里建库：${vaultPath}`)
+  const entries = (await env.fs.readDir(vaultPath)).filter(e => !isJunk(e.name))
+  if (entries.length)
+    throw new Error(`这个文件夹里已经有别的文件了，换一个空文件夹，或者选一个已有的 Kapibala 库：${vaultPath}`)
 
   const meta: VaultMeta = {
     appId: APP_ID, vaultId: ulid(env.clock, env.random), schema: SCHEMA_VERSION,

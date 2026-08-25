@@ -121,11 +121,11 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .welcome{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
           background:var(--bg); z-index:20; padding:40px 28px }
 .welcome-box{ max-width:460px; text-align:center }
-.welcome h2{ font-size:23px; font-weight:600; margin:18px 0 8px; letter-spacing:-.01em }
+.welcome h2{ font-size:22px; font-weight:600; margin:16px 0 22px; letter-spacing:-.01em }
 .welcome .lede{ color:var(--dim); font-size:13.5px; line-height:1.6; margin-bottom:24px }
 .welcome ul{ list-style:none; text-align:left; margin:0 auto 26px; max-width:400px;
              display:flex; flex-direction:column; gap:12px }
-.welcome li{ display:flex; gap:10px; font-size:13px; line-height:1.55 }
+.welcome li{ display:flex; gap:10px; font-size:13px; line-height:1.5 }
 .welcome li b{ font-weight:600 }
 .welcome li .ic{ flex:none; width:20px; text-align:center; opacity:.7 }
 .welcome button{ font:inherit; font-size:14px; font-weight:500; padding:9px 22px;
@@ -156,13 +156,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
       </g>
     </svg>
     <h2>先给你的任务找个家</h2>
-    <p class="lede">Kapibala 不用账号、不联网，也没有服务器。<br>
-      你的任务就是一个普通文件夹里的普通文本文件 —— 所以要先选好这个文件夹。</p>
     <ul>
-      <li><span class="ic">☁</span><span><b>想在多台 Mac 之间同步？</b>选一个 iCloud 云盘里的目录，
-        在另一台 Mac 上打开同一个目录就行。同步交给 iCloud，Kapibala 负责几台机器同时写也不弄坏数据。</span></li>
-      <li><span class="ic">⌂</span><span><b>只想留在本机？</b>选「文稿」或任何别的地方，那就是一个纯本地应用。</span></li>
-      <li><span class="ic">↩</span><span><b>随时能反悔。</b>之后可以再建别的库、随时切换；删掉 App，文件夹还是你的。</span></li>
+      <li><span class="ic">☁</span><span><b>要在多台 Mac 之间同步</b>，选一个 iCloud 云盘里的目录</span></li>
+      <li><span class="ic">⌂</span><span><b>只想留在本机</b>，选「文稿」或任何别的地方</span></li>
+      <li><span class="ic">↩</span><span><b>随时能反悔</b>，之后可以换库；删掉 App，文件夹还是你的</span></li>
     </ul>
     <button id="pick">选择文件夹…</button>
     <p class="hint">空文件夹会新建一个库；已经有 Kapibala 库的文件夹会直接打开。</p>

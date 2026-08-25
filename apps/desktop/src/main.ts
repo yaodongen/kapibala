@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { watch, type FSWatcher } from 'node:fs'
+import { existsSync, watch, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, readRegistry, type Task } from '@kapibala/core'
@@ -61,7 +61,20 @@ async function pickVault(): Promise<Store | null> {
   })
   const dir = r.filePaths[0]
   if (r.canceled || !dir) return null
-  try { return await openVault(dir, true) } catch { return await openVault(dir, false) }
+  // 先看有没有 meta.json 再决定"打开"还是"新建"，不要靠 try/catch 猜 ——
+  // 猜错时两条路都会抛，用户只看到界面毫无反应
+  const isVault = existsSync(join(dir, '.kapibala', 'meta.json'))
+  try {
+    return await openVault(dir, !isVault)
+  } catch (e) {
+    await dialog.showMessageBox({
+      type: 'warning',
+      message: '这个文件夹不能用作库',
+      detail: (e as Error).message,
+      buttons: ['好'],
+    })
+    return null
+  }
 }
 
 async function boot(): Promise<Store | null> {

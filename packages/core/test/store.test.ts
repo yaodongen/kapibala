@@ -192,3 +192,29 @@ describe('压实', () => {
     expect(s3.task(id)!.title).toBe('版本四')
   })
 })
+
+describe('建库时的目录判定', () => {
+  it('只有 .DS_Store 之类的系统垃圾时，仍然算空目录', async () => {
+    const fs = new MemFs()
+    const env = memEnv({ fs })
+    await fs.writeAtomic(`${V}/.DS_Store`, new Uint8Array([1]))
+    await fs.writeAtomic(`${V}/.localized`, new Uint8Array())
+    await fs.writeAtomic(`${V}/.000001.jsonl.icloud`, new Uint8Array())   // iCloud 占位符
+    const s = await Store.open(env, V, true)
+    expect(s.vault.meta.appId).toBe('kapibala')
+  })
+
+  it('真有别的文件时拒绝建库，并说清楚该怎么办', async () => {
+    const fs = new MemFs()
+    await fs.writeAtomic(`${V}/我的简历.docx`, new Uint8Array([1]))
+    await expect(Store.open(memEnv({ fs }), V, true)).rejects.toThrow(/换一个空文件夹/)
+  })
+
+  it('已经是库的目录，用 create 打开也不会报错', async () => {
+    const fs = new MemFs()
+    const env = memEnv({ fs })
+    await Store.open(env, V, true)
+    const again = await Store.open(env, V, true)
+    expect(again.vault.forked).toBe(false)
+  })
+})
