@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:          # 也允许手动跑一次，只出 artifact 不发 release
+
+permissions:
+  contents: write             # 创建 release 需要
+
+jobs:
+  macos:
+    runs-on: macos-latest     # macos-14 起默认就是 arm64，与 electron-builder 的 target 对齐
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'  # 必须 ≥22.18：仓库里直接运行 .ts，不做编译
+
+      # packageManager 字段已固定 pnpm 版本，corepack 会照着装
+      - run: corepack enable
+
+      - name: 装依赖
+        run: pnpm install --frozen-lockfile
+
+      # electron-builder 的版本号取自 apps/desktop/package.json，不是 tag。
+      # 不核对的话，打了 v0.0.2 却忘改 package.json，产出的还是 0.0.1 的包。
+      - name: 核对 tag 与 package.json 的版本号
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          V=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "v$V" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 package.json 里的 $V 不一致"
+            exit 1
+          fi
+
+      - name: 类型检查与测试
+        run: pnpm typecheck && pnpm test
+
+      # 真实文件系统上模拟多台 Mac 同步。存储层出问题绝不能发包
+      - name: e2e
+        run: bash scripts/e2e.sh
+
+      - name: 打 dmg
+        run: pnpm --filter kapibala-desktop dmg
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kapibala-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+          if-no-files-found: error
+
+      - name: 发布 release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true          # 先出草稿，自己看一眼再点发布
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            下载 dmg，拖进「应用程序」。
+
+            > **这个包没有经过 Apple 签名和公证**，首次打开会被 Gatekeeper 拦下。
+            > 右键点击 Kapibala.app → 打开，确认一次即可；或者在终端里执行
+            > `xattr -d com.apple.quarantine /Applications/Kapibala.app`。
+
+            仅 Apple Silicon（arm64）。
+          files: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml

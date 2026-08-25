@@ -1,0 +1,39 @@
+node_modules/
+tsconfig.tsbuildinfo
+
+# 构建产物
+apps/desktop/dist/
+apps/desktop/release/
+apps/desktop/.build-bin/
+ui/icon.iconset/
+*.dmg
+
+# ── 隐私 ────────────────────────────────────────────────
+# 个人的任务清单
+todo.md
+
+# 签名与公证的凭据（APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
+.env
+.env.*
+*.p12
+*.pem
+*.mobileprovision
+
+# 库数据。owner.json 和 vaults.json 里有 claimToken 和 machineId，
+# jsonl 里是你所有的任务内容 —— 万一有人在仓库里建了库，别跟着提交
+vaults.json
+.kapibala/
+devices/
+*.jsonl
+snapshot.json
+owner.json
+
+# 截图里可能有真实任务
+ui/screenshot.png
+*.log
+
+# 本地环境
+.claude/settings.local.json
+.vscode/
+.idea/
+.DS_Store

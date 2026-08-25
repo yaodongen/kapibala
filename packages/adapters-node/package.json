@@ -1,0 +1,13 @@
+{
+  "name": "@kapibala/adapters-node",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@kapibala/core": "workspace:*"
+  },
+  "license": "MIT"
+}
