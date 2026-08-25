@@ -12,10 +12,11 @@ PREFIX  ?= $(HOME)/.local/bin
 BIN     := $(PREFIX)/kapi
 PNPM    := corepack pnpm
 CLI     := $(REPO)/apps/cli/src/index.ts
+VERSION := $(shell node -p "require('./package.json').version")
 ICLOUD  := $(HOME)/Library/Mobile Documents/com~apple~CloudDocs
 
 .DEFAULT_GOAL := help
-.PHONY: help desktop app dmg install-app run check test e2e deploy doctor install unlink \
+.PHONY: help desktop app dmg install-app tag run check test e2e deploy doctor install unlink \
         watch icons clean distclean typecheck link desktop-build
 
 help:
@@ -33,6 +34,7 @@ help:
 	@echo "    make app         打出 Kapibala.app（本机直接双击就能跑）"
 	@echo "    make install-app 打包并装进 /Applications"
 	@echo "    make dmg         打出可以发给别人的 dmg"
+	@echo "    make tag         打 v$(VERSION) 标签并推送，触发 release 构建"
 	@echo ""
 	@echo "  安装"
 	@echo "    make deploy      装依赖 + 自检 + 把 kapi 装进 $(PREFIX)"
@@ -51,6 +53,22 @@ help:
 # ─────────────────────────────────────────────────────────────
 #  日常
 # ─────────────────────────────────────────────────────────────
+
+# 标签名取自 package.json，避免 tag 与包里的版本号对不上 ——
+# workflow 里那道断言拦的就是这种情况
+tag:
+	@test -z "$$(git status --porcelain)" || { echo "工作区不干净，先提交"; exit 1; }
+	@git fetch -q origin
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/$$(git branch --show-current))" || \
+	  { echo "当前提交还没推上去。release 的代码要和标签一致，先 git push"; exit 1; }
+	@git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null && \
+	  { echo "本地已有 v$(VERSION)：git tag -d v$(VERSION)"; exit 1; } || true
+	@git ls-remote --exit-code --tags origin "v$(VERSION)" >/dev/null 2>&1 && \
+	  { echo "远端已有 v$(VERSION)：git push origin :refs/tags/v$(VERSION)"; exit 1; } || true
+	@git tag "v$(VERSION)"
+	@git push -q origin "v$(VERSION)"
+	@echo "已推送 v$(VERSION)，release 构建开始了："
+	@echo "    $$(git remote get-url origin | sed -E 's|git@github.com:|https://github.com/|; s|\.git$$||')/actions"
 
 install-app: app
 	@rm -rf /Applications/Kapibala.app
