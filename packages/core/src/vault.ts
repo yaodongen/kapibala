@@ -15,6 +15,11 @@ const JUNK = new Set(['.DS_Store', '.localized', 'Icon\r', '.Trashes', '.fsevent
                       '.Spotlight-V100', '.TemporaryItems', 'desktop.ini', 'Thumbs.db'])
 export const isJunk = (name: string) => JUNK.has(name) || name.endsWith('.icloud')
 
+/** "文件还没从 iCloud 落地"和"根本不是库"是两件事，报错不能混 */
+export const NOT_DOWNLOADED = 'KAPIBALA_NOT_DOWNLOADED'
+export const isNotDownloaded = (e: unknown) =>
+  !!e && typeof e === 'object' && (e as { code?: string }).code === NOT_DOWNLOADED
+
 export const registryPath = (userDataDir: string) => `${userDataDir}/vaults.json`
 
 export async function readRegistry(env: Env): Promise<VaultsFile> {
@@ -93,8 +98,17 @@ export async function createVault(env: Env, vaultPath: string, name?: string): P
 }
 
 export async function openVault(env: Env, vaultPath: string): Promise<OpenResult> {
+  // meta.json 自己也可能是 iCloud 占位符 —— 不先触发下载就会被当成"这不是一个库"
+  try { await env.fs.ensureDownloaded(`${vaultPath}/.kapibala/meta.json`) } catch { /* 下面会报错 */ }
   const meta = dec<VaultMeta>(await env.fs.readFile(`${vaultPath}/.kapibala/meta.json`))
-  if (!meta) throw new Error(`这不是一个 Kapibala 库（缺 .kapibala/meta.json）：${vaultPath}`)
+  if (!meta) {
+    // 占位符还在，说明这确实是个库，只是文件没落地 —— 别谎报"不是库"
+    const pending = (await env.fs.readDir(`${vaultPath}/.kapibala`))
+      .some(e => e.name === '.meta.json.icloud')
+    if (pending)
+      throw Object.assign(new Error('库文件还在从 iCloud 下载，稍等一下再试'), { code: NOT_DOWNLOADED })
+    throw new Error(`这不是一个 Kapibala 库（缺 .kapibala/meta.json）：${vaultPath}`)
+  }
   if (meta.appId !== APP_ID) throw new Error(`这个目录属于别的应用：${meta.appId}`)
 
   const reg = await readRegistry(env)

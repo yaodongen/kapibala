@@ -88,14 +88,15 @@ function render() {
   ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
 
   $('vault').innerHTML = vault
-    ? `<b>${esc(vault.name)}</b><br>${esc(vault.path.replace(/^\/Users\/[^/]+/, '~'))}<br>` +
+    ? `<span class="swap">⇅</span><b>${esc(vault.name)}</b><br>` +
+      `${esc(vault.path.replace(/^\/Users\/[^/]+/, '~'))}<br>` +
       `${esc(vault.deviceLabel)} · 共 ${vault.health.devices} 台设备`
     : ''
 
   const notes: string[] = []
   if (vault?.readOnly) notes.push('<div class="banner warn">这个库的格式比当前版本新，已按只读打开</div>')
   if (vault?.forked) notes.push('<div class="banner">这个设备目录不属于本机（库被复制或迁移过），已换用新的设备身份</div>')
-  if (vault?.health.incomplete) notes.push('<div class="banner warn">有文件读不出来，历史可能不完整</div>')
+  if (vault?.health.incomplete) notes.push('<div class="banner">有文件还没从 iCloud 下载下来，任务可能显示不全，落地后会自动补上</div>')
   if (vault?.health.badLines) notes.push(`<div class="banner">跳过了 ${vault.health.badLines} 行坏数据</div>`)
   $('banner').innerHTML = notes.join('')
 
@@ -136,6 +137,14 @@ document.addEventListener('click', async (e) => {
   await kapi[act](btn.dataset['id']!)
 })
 
+// 右键任务：交给主进程弹原生菜单
+document.addEventListener('contextmenu', (e) => {
+  const box = (e.target as HTMLElement).closest<HTMLElement>('.task')?.querySelector<HTMLElement>('[data-id]')
+  if (!box) return
+  e.preventDefault()
+  void kapi['task:menu'](box.dataset['id']!)
+})
+
 const ti = $('newTitle') as HTMLInputElement
 const di = $('newDate') as HTMLInputElement
 const ri = $('newRepeat') as HTMLSelectElement
@@ -150,6 +159,74 @@ ti.addEventListener('keydown', async (e) => {
   ti.value = ''; di.value = ''; ri.value = ''
 })
 
+/* ── 切换库 ── */
+async function openVaultList() {
+  const list = await kapi['vault:list']()
+  $('vlist').innerHTML = list.map(v => `
+    <button class="vrow ${v.available ? '' : 'off'}" data-vault="${v.id}">
+      <span class="dot">${v.current ? '●' : ''}</span>
+      <span><span class="nm">${esc(v.name)}</span>
+        <span class="pt">${esc(v.path.replace(/^\/Users\/[^/]+/, '~'))}</span></span>
+      ${v.available ? '' : '<span class="miss">找不到</span>'}
+    </button>`).join('')
+  ;($('vaultsheet') as HTMLElement).hidden = false
+}
+
+async function switchVault(id: string) {
+  try {
+    vault = await kapi['vault:open'](id)
+    tasks = await kapi['task:list']()
+    ;($('vaultsheet') as HTMLElement).hidden = true
+    view = 'today'
+    render()
+  } catch (e) {
+    // 失败就把原因写在那一行上，别把面板关掉
+    const pt = document.querySelector(`[data-vault="${id}"] .pt`) as HTMLElement | null
+    if (pt) pt.textContent = `打不开：${(e as Error).message}`
+  }
+}
+
+$('vault').addEventListener('click', () => void openVaultList())
+$('vaultadd').addEventListener('click', async () => {
+  const v = await kapi['vault:pick']()
+  if (!v) return
+  vault = v
+  tasks = await kapi['task:list']()
+  ;($('vaultsheet') as HTMLElement).hidden = true
+  view = 'today'
+  render()
+})
+
+/* ── 错误日志 ── */
+async function openLog() {
+  const { text, path } = await kapi['log:read']()
+  $('logtext').textContent = text
+  $('logpath').textContent = path.replace(/^\/Users\/[^/]+/, '~')
+  ;($('logsheet') as HTMLElement).hidden = false
+}
+document.addEventListener('click', (e) => {
+  const t = e.target as HTMLElement
+  if (t.closest('[data-log]')) { void openLog(); return }
+  const vrow = t.closest<HTMLElement>('[data-vault]')
+  if (vrow) { void switchVault(vrow.dataset['vault']!); return }
+  if (t.id === 'logclose' || t.id === 'logsheet') ($('logsheet') as HTMLElement).hidden = true
+  if (t.id === 'vaultclose' || t.id === 'vaultsheet') ($('vaultsheet') as HTMLElement).hidden = true
+})
+$('logcopy').addEventListener('click', async () => {
+  await kapi['log:copy']()
+  const b = $('logcopy'); const old = b.textContent
+  b.textContent = '已复制'; setTimeout(() => { b.textContent = old }, 1200)
+})
+$('logreveal').addEventListener('click', () => void kapi['log:reveal']())
+
+// 渲染进程自己的报错也要进同一份日志，否则用户看到的日志里没有真正的原因
+window.addEventListener('error', (e) => {
+  void kapi['log:renderer'](`${e.message} @ ${e.filename}:${e.lineno}`)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  void kapi['log:renderer'](`未处理的拒绝：${String((e as PromiseRejectionEvent).reason)}`)
+})
+
 kapi.onTasksChanged((t) => { tasks = t; render() })
 
 /** 没有库时先讲清楚为什么要选文件夹，再由用户点按钮触发系统对话框 */
@@ -160,8 +237,12 @@ function showWelcome(on: boolean) {
 
 $('pick').addEventListener('click', async () => {
   const hint = $('welcome').querySelector('.hint') as HTMLElement
+  const btn = $('pick') as HTMLButtonElement
   try {
     const v = await kapi['vault:pick']()
+    // 从 iCloud 同步过来的库可能要等文件落地，这里必须有反馈，否则看着像死了
+    btn.disabled = true
+    btn.textContent = '正在打开…' 
     if (!v) return                      // 用户取消或选了不能用的目录，留在引导页
     vault = v
     tasks = await kapi['task:list']()
@@ -171,6 +252,9 @@ $('pick').addEventListener('click', async () => {
   } catch (e) {
     // 整段都要包住：不 catch 的话异常烂在这里，用户只看到点了没反应
     hint.textContent = `打不开这个文件夹：${(e as Error).message}`
+  } finally {
+    btn.disabled = false
+    btn.textContent = '选择文件夹…'
   }
 })
 

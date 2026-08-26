@@ -2,18 +2,18 @@
 
 Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存储在你自己的磁盘上。
 
-**最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步了：同步交给早就做得很好的 iCloud，Kapibala 只负责让几台机器同时写也不会弄坏数据。
+**最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步
 
 ## 1. 下载
 
 到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
 
-| 你的 Mac | 下载 |
-| --- | --- |
-| Apple 芯片（M 系列） | `Kapibala-*-arm64.dmg` |
-| Intel 芯片 | `Kapibala-*-x64.dmg` |
 
-不确定的话，点左上角  → 「关于本机」，看「芯片」或「处理器」那一行。
+| 你的 Mac         | 下载                     |
+| -------------- | ---------------------- |
+| Apple 芯片（M 系列） | `Kapibala-*-arm64.dmg` |
+| Intel 芯片       | `Kapibala-*-x64.dmg`   |
+
 
 > 这个包还没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
 >

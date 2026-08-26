@@ -6,6 +6,16 @@ import type { ClockPort, DirEntry, Env, FsPort, RandomPort } from '@kapibala/cor
 
 const nil = (e: unknown) => (e as { code?: string }).code === 'ENOENT'
 
+/** 让宿主（桌面版）能把这里的观察写进它的日志 */
+let note: (msg: string, extra?: unknown) => void = () => {}
+export const setNoteLogger = (fn: typeof note) => { note = fn }
+
+/** iCloud 没下载的文件在目录里显示为 .原名.icloud */
+export const placeholderOf = (p: string) => {
+  const i = p.lastIndexOf('/')
+  return `${p.slice(0, i)}/.${p.slice(i + 1)}.icloud`
+}
+
 export class NodeFs implements FsPort {
   async readFile(p: string) {
     try { return new Uint8Array(await fs.readFile(p)) } catch (e) { if (nil(e)) return null; throw e }
@@ -32,19 +42,24 @@ export class NodeFs implements FsPort {
    * 跳过占位符 = 静默丢掉一整台设备的历史，所以这里必须触发下载并等它完成。
    * 见 storage.zh.md §6.4
    */
-  async ensureDownloaded(p: string, timeoutMs = 30_000) {
-    const i = p.lastIndexOf('/')
-    const dir = p.slice(0, i), base = p.slice(i + 1)
-    const placeholder = `${dir}/.${base}.icloud`
+  /**
+   * 触发下载并短暂等待。**不能久等**：第二台 Mac 打开同步过来的库时，
+   * 整个库可能全是占位符，每个文件等 30 秒会让界面像死了一样。
+   * 这里最多等 3 秒就放弃，让上层带着"历史不完整"先把界面显示出来，
+   * 文件落地后 fs.watch 会自动触发重读。
+   */
+  async ensureDownloaded(p: string, timeoutMs = 3000) {
     try { await fs.access(p); return } catch { /* 落地文件不存在，继续看占位符 */ }
-    try { await fs.access(placeholder) } catch { return }   // 也没有占位符 → 文件真的不存在
+    try { await fs.access(placeholderOf(p)) } catch { return }  // 也没有占位符 → 文件真的不存在
+    note('iCloud 占位符，触发下载', { path: p })
     try { execFileSync('brctl', ['download', p], { stdio: 'ignore' }) } catch { /* 尽力而为 */ }
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       try { await fs.access(p); return } catch {}
-      await new Promise(r => setTimeout(r, 300))
+      await new Promise(r => setTimeout(r, 200))
     }
-    throw new Error(`iCloud 文件下载超时：${p}`)
+    note('iCloud 文件还没下载下来，先跳过', { path: p, waitedMs: timeoutMs })
+    throw new Error(`iCloud 文件还没下载下来：${p}`)
   }
 }
 

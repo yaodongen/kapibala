@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Store } from '../src/store.ts'
 import { MemFs, memEnv } from '../src/testing.ts'
 import { parseSegment } from '../src/log.ts'
-import { openVault } from '../src/vault.ts'
+import { NOT_DOWNLOADED, openVault } from '../src/vault.ts'
 
 const V = '/vault'
 const setup = async () => {
@@ -216,5 +216,39 @@ describe('建库时的目录判定', () => {
     await Store.open(env, V, true)
     const again = await Store.open(env, V, true)
     expect(again.vault.forked).toBe(false)
+  })
+})
+
+describe('第二台 Mac：库文件还是 iCloud 占位符', () => {
+  const placeholderVault = async () => {
+    const fs = new MemFs()
+    const a = memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua' })
+    const s = await Store.open(a, V, true)
+    await s.add({ title: 'Mac A 写的' })
+    // iCloud 驱逐：真实文件换成 .原名.icloud
+    for (const [k, v] of [...fs.files]) {
+      if (k.startsWith(V)) {
+        const i = k.lastIndexOf('/')
+        fs.files.delete(k)
+        fs.files.set(`${k.slice(0, i)}/.${k.slice(i + 1)}.icloud`, v)
+      }
+    }
+    return fs
+  }
+
+  it('报"还在下载"而不是"不是一个库" —— 这两件事不能混', async () => {
+    const fs = await placeholderVault()
+    const b = memEnv({ fs, machineId: 'MACHINE-B', userDataDir: '/ub' })
+    await expect(openVault(b, V)).rejects.toMatchObject({ code: NOT_DOWNLOADED })
+  })
+
+  it('文件落地之后就能正常打开，读到对面的任务', async () => {
+    const fs = await placeholderVault()
+    for (const [k, v] of [...fs.files]) {          // iCloud 下载完成
+      const m = /^(.*)\/\.(.+)\.icloud$/.exec(k)
+      if (m) { fs.files.delete(k); fs.files.set(`${m[1]}/${m[2]}`, v) }
+    }
+    const b = await Store.open(memEnv({ fs, machineId: 'MACHINE-B', userDataDir: '/ub' }), V)
+    expect(b.tasks().map(t => t.title)).toContain('Mac A 写的')
   })
 })

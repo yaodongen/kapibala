@@ -19,6 +19,9 @@
   }
 }
 *{box-sizing:border-box;margin:0;padding:0}
+/* hidden 属性自带的 display:none 来自 UA 样式，优先级最低 —— 下面任何
+   display:flex 都会把它压掉。覆盖层就会从启动起一直显示、还关不掉。 */
+[hidden]{ display:none !important }
 body{
   font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;
   color:var(--text); background:var(--bg); height:100vh; overflow:hidden;
@@ -109,8 +112,23 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 /* 桌面版新增 */
 .app{ -webkit-user-select:none; user-select:none }
 .sidebar{ padding-top:34px }            /* 让出 hiddenInset 标题栏 */
-.vault{ margin-top:auto; padding:8px; font-size:11px; color:var(--dim); line-height:1.4 }
+.vault{ margin-top:auto; padding:8px; font-size:11px; color:var(--dim); line-height:1.4;
+        border:none; background:none; text-align:left; width:100%; font-family:inherit;
+        border-radius:7px; cursor:default }
+.vault:hover{ background:var(--row-hover) }
 .vault b{ color:var(--text); font-weight:500 }
+.vault .swap{ float:right; opacity:.6 }
+/* 库列表 */
+.vlist{ margin:0; padding:6px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:2px }
+.vrow{ display:flex; align-items:flex-start; gap:9px; padding:8px 10px; border-radius:8px;
+       border:none; background:none; font:inherit; text-align:left; width:100%; cursor:default;
+       color:var(--text) }
+.vrow:hover{ background:var(--row-hover) }
+.vrow .dot{ flex:none; width:14px; text-align:center; color:var(--accent); margin-top:1px }
+.vrow .nm{ font-size:13px }
+.vrow .pt{ display:block; font-size:11px; color:var(--dim); margin-top:2px; word-break:break-all }
+.vrow.off .nm, .vrow.off .pt{ color:var(--dim) }
+.vrow .miss{ margin-left:auto; flex:none; font-size:11px; color:var(--danger) }
 .banner{ margin:0 28px 8px; padding:7px 10px; border-radius:7px; font-size:12px;
          background:var(--accent-soft); color:var(--accent) }
 .banner.warn{ background:#fdeceb; color:var(--danger) }
@@ -128,11 +146,32 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .welcome li{ display:flex; gap:10px; font-size:13px; line-height:1.5 }
 .welcome li b{ font-weight:600 }
 .welcome li .ic{ flex:none; width:20px; text-align:center; opacity:.7 }
-.welcome button{ font:inherit; font-size:14px; font-weight:500; padding:9px 22px;
+.welcome #pick{ font:inherit; font-size:14px; font-weight:500; padding:9px 22px;
                  border:none; border-radius:8px; background:var(--accent); color:#fff;
                  cursor:default; box-shadow:var(--shadow) }
-.welcome button:hover{ filter:brightness(1.08) }
+.welcome #pick:hover{ filter:brightness(1.08) }
 .welcome .hint{ margin-top:14px; font-size:11.5px; color:var(--dim); line-height:1.6 }
+/* 日志面板 */
+.logbtn{ border:none; background:none; font:inherit; font-size:11px; color:var(--dim);
+         padding:2px 0; cursor:default; text-decoration:underline; text-underline-offset:2px }
+.logbtn:hover{ color:var(--text) }
+.sheet{ position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.28);
+        display:flex; align-items:center; justify-content:center; padding:34px 24px 24px }
+.sheet-box{ background:var(--bg); border-radius:12px; box-shadow:0 18px 50px rgba(0,0,0,.28);
+            width:100%; max-width:760px; max-height:100%; display:flex; flex-direction:column }
+.sheet-head{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border) }
+.sheet-head b{ font-size:13.5px; white-space:nowrap }
+.sheet-head .path{ color:var(--dim); font-size:11px; margin-left:auto; user-select:text;
+                   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; max-width:60% }
+.sheet pre{ margin:0; padding:14px 16px; overflow:auto; flex:1; font-size:11.5px; line-height:1.55;
+            font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap;
+            word-break:break-all; -webkit-user-select:text; user-select:text; color:var(--text) }
+.sheet-foot{ display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border) }
+.sheet-foot button{ font:inherit; font-size:12.5px; padding:6px 13px; border-radius:7px;
+                    border:1px solid var(--border); background:var(--bg); color:var(--text); cursor:default }
+.sheet-foot button:hover{ background:var(--row-hover) }
+.sheet-foot .primary{ background:var(--accent); border-color:transparent; color:#fff }
+.sheet-foot .right{ margin-left:auto }
 .titlebar{ position:fixed; top:0; left:0; right:0; height:34px; z-index:50;
            -webkit-app-region:drag; app-region:drag }
 /* 可拖动区域里的可点击元素要单独排除，否则点不动 */
@@ -163,6 +202,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </ul>
     <button id="pick">选择文件夹…</button>
     <p class="hint">空文件夹会新建一个库；已经有 Kapibala 库的文件夹会直接打开。</p>
+    <p class="hint"><button class="logbtn" data-log>出问题了？查看错误日志</button></p>
   </div>
 </div>
 
@@ -183,7 +223,8 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
       <span>卡皮巴拉</span>
     </div>
     <nav id="nav"></nav>
-    <div class="vault" id="vault"></div>
+    <button class="vault" id="vault" title="切换库"></button>
+    <div style="padding:0 8px 6px"><button class="logbtn" data-log>查看错误日志</button></div>
   </aside>
   <main class="main">
     <header>
@@ -204,6 +245,32 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     <div class="list" id="list"></div>
   </main>
 </div>
+<div class="sheet" id="vaultsheet" hidden>
+  <div class="sheet-box">
+    <div class="sheet-head"><b>切换库</b></div>
+    <div class="vlist" id="vlist"></div>
+    <div class="sheet-foot">
+      <button class="primary" id="vaultadd">打开其他文件夹…</button>
+      <button class="right" id="vaultclose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="logsheet" hidden>
+  <div class="sheet-box">
+    <div class="sheet-head">
+      <b>错误日志</b>
+      <span class="path" id="logpath"></span>
+    </div>
+    <pre id="logtext"></pre>
+    <div class="sheet-foot">
+      <button class="primary" id="logcopy">复制全部</button>
+      <button id="logreveal">在 Finder 中显示</button>
+      <button class="right" id="logclose">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

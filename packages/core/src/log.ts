@@ -81,10 +81,11 @@ export async function readDevice(fs: FsPort, devicesDir: string, deviceId: strin
   const r: DeviceRead = { deviceId, ops: [], segments: [], lastSegment: 0,
                           badLines: 0, droppedTail: false, incomplete: false }
 
-  // 先把占位符全部触发下载，否则会静默丢掉这台设备的历史
-  for (const n of names) {
-    try { await fs.ensureDownloaded(`${dir}/${n}`) } catch { r.incomplete = true }
-  }
+  // 先把占位符全部触发下载，否则会静默丢掉这台设备的历史。
+  // 必须并发：串着等的话，一个全是占位符的库会让界面卡上好几分钟
+  const downloads = await Promise.allSettled(
+    names.map(n => fs.ensureDownloaded(`${dir}/${n}`)))
+  if (downloads.some(d => d.status === 'rejected')) r.incomplete = true
 
   if (names.includes('snapshot.json')) {
     try {
