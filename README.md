@@ -6,6 +6,8 @@ Kapibala is a to-do app for macOS. All of your data lives on your own disk.
 
 **It pairs best with iCloud Drive.** Put the folder in iCloud (or Dropbox, or any sync service) and your Macs stay in sync automatically.
 
+![The Kapibala main window](./docs/images/screenshot.png)
+
 ## 1. Download
 
 Grab the matching `.dmg` from [Releases](https://github.com/yaodongen/kapibala/releases/latest), open it, and drag Kapibala into your Applications folder.
@@ -48,6 +50,10 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 - All tasks
 - Completed
 - Trash
+
+**Interface**
+
+- English and Chinese. It follows your Mac's language, and you can switch any time from the bottom-left corner
 
 ## 4. Privacy
 

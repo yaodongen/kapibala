@@ -66,6 +66,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   padding:8px; border:1px solid var(--border); border-radius:7px;
   background:var(--bg); color:var(--dim); font:inherit; font-size:12.5px;
 }
+/* 原生 select 会自己撑到最长那条选项的宽度（英文里是 "Monthly on the last
+   Wednesday"），能把整条添加栏顶到换行。给个上限，让它自己截断 */
+.add select{ max-width:170px }
+.dmeta select{ max-width:100% }
 .list{flex:1; overflow-y:auto; padding:0 28px 40px}
 
 /* ── 分组 ── */
@@ -136,7 +140,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 /* ── 备注 ── */
 .md{ font-size:13px; line-height:1.65; color:var(--text); flex:1;
      -webkit-user-select:text; user-select:text; cursor:text }
-.md:empty::before{ content:'写点备注…（支持 Markdown）'; color:var(--dim) }
+.md:empty::before{ content:var(--md-empty, ''); color:var(--dim) }
 .md > :first-child{ margin-top:0 }
 .md > :last-child{ margin-bottom:0 }
 .md p{ margin:.35em 0 }
@@ -171,7 +175,8 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .vault:hover{ border-color:var(--dim) }
 .vault b{ color:var(--text); font-weight:600 }
 .vault .swap{ margin-left:auto; opacity:.55; font-size:11px }
-.sidefoot{ margin-top:auto; padding:8px 8px 2px }
+.sidefoot{ margin-top:auto; padding:8px 8px 2px; display:flex; align-items:baseline; gap:8px }
+.sidefoot #langbtn{ margin-left:auto }
 /* 库列表 */
 .vlist{ margin:0; padding:6px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:2px }
 .vrow{ display:flex; align-items:flex-start; gap:9px; padding:8px 10px; border-radius:8px;
@@ -256,15 +261,16 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
         <rect x="5.5" y="4.3" width="8.2" height="7.6" rx="3.3"/>
       </g>
     </svg>
-    <h2>请选择一个目录存储数据</h2>
+    <h2 id="welcometitle"></h2>
     <ul>
-      <li><span class="ic">☁</span><span><b>要在多台 Mac 之间同步</b>，选一个 iCloud 云盘里的目录</span></li>
-      <li><span class="ic">⌂</span><span><b>只想留在本机</b>，选「文稿」或任何别的地方</span></li>
-      <li><span class="ic">↩</span><span><b>随时能反悔</b>，之后可以换库；删掉 App，文件夹还是你的</span></li>
+      <li><span class="ic">☁</span><span id="welcomesync"></span></li>
+      <li><span class="ic">⌂</span><span id="welcomelocal"></span></li>
+      <li><span class="ic">↩</span><span id="welcomeundo"></span></li>
     </ul>
-    <button id="pick">选择文件夹…</button>
-    <p class="hint">空文件夹会新建一个库；已经有 Kapibala 库的文件夹会直接打开。</p>
-    <p class="hint"><button class="logbtn" data-log>出问题了？查看日志</button></p>
+    <button id="pick"></button>
+    <p class="hint" id="welcomehint"></p>
+    <p class="hint"><button class="logbtn" id="welcomelog" data-log></button>
+       · <button class="logbtn" id="welcomelang" data-lang></button></p>
   </div>
 </div>
 
@@ -282,12 +288,15 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
           <rect x="5.5" y="4.3" width="8.2" height="7.6" rx="3.3"/>
         </g>
       </svg>
-      <span>卡皮巴拉</span>
+      <span id="brandname"></span>
     </div>
-    <button class="vault" id="vault" title="切换库"></button>
-    <input type="search" id="search" placeholder="搜索" autocomplete="off">
+    <button class="vault" id="vault"></button>
+    <input type="search" id="search" autocomplete="off">
     <nav id="nav"></nav>
-    <div class="sidefoot"><button class="logbtn" data-log>查看日志</button></div>
+    <div class="sidefoot">
+      <button class="logbtn" id="logbtn" data-log></button>
+      <button class="logbtn" id="langbtn" data-lang></button>
+    </div>
   </aside>
   <main class="main">
     <header>
@@ -296,35 +305,31 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </header>
     <div id="banner"></div>
     <div class="add" id="addbar">
-      <input type="text" id="newTitle" placeholder="添加任务，回车保存" autocomplete="off">
+      <input type="text" id="newTitle" autocomplete="off">
       <input type="date" id="newDate">
-      <select id="newRepeat">
-        <option value="">不重复</option>
-        <option value="DAILY">每天</option>
-        <option value="WEEKLY">每周</option>
-        <option value="MONTHLY">每月</option>
-      </select>
+      <!-- 选项由 syncNewRepeat() 按所选日期生成（"每月第二个周二"离开日期就没法写死） -->
+      <select id="newRepeat"></select>
     </div>
     <div class="list" id="list"></div>
   </main>
 
   <aside class="detailpane" id="detail">
     <div class="dhead">
-      <input class="t" id="dtitle" placeholder="任务标题" autocomplete="off">
+      <input class="t" id="dtitle" autocomplete="off">
     </div>
     <div class="dmeta" id="dmeta"></div>
-    <div class="dlabel">备注</div>
+    <div class="dlabel" id="dlabel"></div>
     <div class="dbody" id="dbody"></div>
   </aside>
 </div>
 <div class="sheet" id="vaultsheet" hidden>
   <div class="sheet-box">
-    <div class="sheet-head"><b>切换库</b></div>
+    <div class="sheet-head"><b id="vaultsheettitle"></b></div>
     <div class="vlist" id="vlist"></div>
     <div class="sheet-foot">
-      <button class="primary" id="vaultadd">打开其他文件夹…</button>
-      <span class="note">关闭只是把它从这个列表里去掉，文件夹和里面的任务不会被删除</span>
-      <button class="right" id="vaultclose">关闭</button>
+      <button class="primary" id="vaultadd"></button>
+      <span class="note" id="vaultforgetnote"></span>
+      <button class="right" id="vaultclose"></button>
     </div>
   </div>
 </div>
@@ -332,14 +337,14 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 <div class="sheet" id="logsheet" hidden>
   <div class="sheet-box">
     <div class="sheet-head">
-      <b>日志</b>
+      <b id="logsheettitle"></b>
       <span class="path" id="logpath"></span>
     </div>
     <pre id="logtext"></pre>
     <div class="sheet-foot">
-      <button class="primary" id="logcopy">复制全部</button>
-      <button id="logreveal">在 Finder 中显示</button>
-      <button class="right" id="logclose">关闭</button>
+      <button class="primary" id="logcopy"></button>
+      <button id="logreveal"></button>
+      <button class="right" id="logclose"></button>
     </div>
   </div>
 </div>

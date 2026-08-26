@@ -121,6 +121,40 @@ describe('中文描述', () => {
   })
 })
 
+describe('英文描述', () => {
+  it.each([
+    ['FREQ=DAILY', 'Daily'],
+    ['FREQ=DAILY;INTERVAL=3', 'Every 3 days'],
+    ['FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', 'Weekdays'],
+    ['FREQ=WEEKLY;BYDAY=TU', 'Every Tuesday'],
+    ['FREQ=WEEKLY;INTERVAL=2;BYDAY=MO', 'Every 2 weeks on Monday'],
+    ['FREQ=MONTHLY;BYDAY=2TU', 'Monthly on the 2nd Tuesday'],
+    ['FREQ=MONTHLY;BYDAY=-1FR', 'Monthly on the last Friday'],
+    ['FREQ=MONTHLY;BYMONTHDAY=-1', 'Monthly on the last day'],
+    ['FREQ=MONTHLY;BYMONTHDAY=15', 'Monthly on the 15th'],
+    ['FREQ=YEARLY;BYMONTH=8;BYMONTHDAY=26', 'Yearly on August 26'],
+  ])('%s → %s', (src, want) => {
+    expect(describeRrule(src, 'en')).toBe(want)
+  })
+
+  it('序数词的边界：11/12/13 是 th，21/22/23 才是 st/nd/rd', () => {
+    const day = (n: number) => describeRrule(`FREQ=MONTHLY;BYMONTHDAY=${n}`, 'en')
+    expect([1, 2, 3, 11, 12, 13, 21, 22, 23].map(day)).toEqual([
+      'Monthly on the 1st', 'Monthly on the 2nd', 'Monthly on the 3rd',
+      'Monthly on the 11th', 'Monthly on the 12th', 'Monthly on the 13th',
+      'Monthly on the 21st', 'Monthly on the 22nd', 'Monthly on the 23rd',
+    ])
+  })
+
+  it('看不懂的规则在英文里也不猜', () => {
+    expect(describeRrule('FREQ=HOURLY', 'en')).toBe('Repeats')
+  })
+
+  it('默认还是中文 —— CLI 和旧调用点没传语言', () => {
+    expect(describeRrule('FREQ=MONTHLY;BYDAY=2TU')).toBe('每月第二个周二')
+  })
+})
+
 describe('界面预设', () => {
   it('从一个具体日期推出六个预设', () => {
     // 2026-08-11 是八月第二个周二
@@ -129,6 +163,17 @@ describe('界面预设', () => {
       '每天', '每周周二', '工作日（周一至周五）', '每月 11 日', '每月第二个周二', '每年 8 月 11 日',
     ])
     expect(opts[4]!.rrule).toBe('FREQ=MONTHLY;BYDAY=2TU')
+  })
+
+  it('英文预设：规则一模一样，只有 label 换语言', () => {
+    const at = +new Date('2026-08-11T09:00')
+    const zh = presetsFor(at)
+    const en = presetsFor(at, 'en')
+    expect(en.map(o => o.rrule)).toEqual(zh.map(o => o.rrule))
+    expect(en.map(o => o.label)).toEqual([
+      'Daily', 'Weekly on Tuesday', 'Weekdays (Mon–Fri)', 'Monthly on the 11th',
+      'Monthly on the 2nd Tuesday', 'Yearly on August 11',
+    ])
   })
 })
 

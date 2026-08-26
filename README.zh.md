@@ -6,6 +6,8 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 
 **最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步
 
+![卡皮巴拉的主界面](./docs/images/screenshot.zh.png)
+
 ## 1. 下载
 
 到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
@@ -50,6 +52,10 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 - 全部任务
 - 已完成
 - 垃圾桶
+
+**界面**
+
+- 中文和英文，默认跟随系统语言，也可以在左下角随时切换
 
 ## 4. 隐私
 

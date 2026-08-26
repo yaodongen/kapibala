@@ -1,5 +1,5 @@
 /** 主进程与渲染进程共享的契约。渲染进程只认识这些，永远看不到 op 和 HLC */
-import type { RepeatRule, Task } from '@kapibala/core'
+import type { Lang, RepeatRule, Task } from '@kapibala/core'
 
 export type VaultState = {
   id: string
@@ -48,6 +48,9 @@ export type Commands = {
   'task:menu': (id: string) => void
   /** 记住选中的任务。属于本机的界面状态，写在 userData 里，不进库目录 */
   'ui:lastTask': (taskId: string) => void
+  /** 界面语言。默认跟系统走，改过就以改过的为准。同样是本机状态，不进库目录 */
+  'ui:lang': () => Lang
+  'ui:setLang': (lang: Lang) => Lang
   'log:read': () => { text: string; path: string }
   'log:copy': () => void
   'log:reveal': () => void
@@ -65,7 +68,7 @@ export type Events = {
 export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:menu',
-  'ui:lastTask', 'log:read', 'log:copy', 'log:reveal', 'log:renderer',
+  'ui:lastTask', 'ui:lang', 'ui:setLang', 'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 
 export type Api = {

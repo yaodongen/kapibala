@@ -173,22 +173,69 @@ export function nextAfter(rule: Rrule, anchorMs: number, afterMs: number): numbe
   return null
 }
 
+/** 界面语言。拿不准的语言一律按中文，见 apps/desktop/src/i18n.ts 的 langOf */
+export type Lang = 'zh' | 'en'
+
 const CN_DAY: Record<Weekday, string> = {
   SU: '周日', MO: '周一', TU: '周二', WE: '周三', TH: '周四', FR: '周五', SA: '周六',
 }
 const CN_ORD = ['', '第一个', '第二个', '第三个', '第四个', '第五个']
+const EN_DAY: Record<Weekday, string> = {
+  SU: 'Sunday', MO: 'Monday', TU: 'Tuesday', WE: 'Wednesday',
+  TH: 'Thursday', FR: 'Friday', SA: 'Saturday',
+}
+const EN_MONTH = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December']
 
-/** 给界面用的中文描述，比如"每月第二个周二" */
-export function describeRrule(src: string | Rrule): string {
+/** 1 → 1st，2 → 2nd，-1 → last。序数词只在英文里需要 */
+function ord(n: number): string {
+  if (n === -1) return 'last'
+  const suffix = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`
+}
+
+const WORKDAYS: Weekday[] = ['MO', 'TU', 'WE', 'TH', 'FR']
+const isWorkweek = (days: Weekday[]) =>
+  days.length === 5 && WORKDAYS.every(d => days.includes(d))
+
+/** 英文描述，比如 "Monthly on the 2nd Tuesday" */
+function describeEn(r: Rrule): string {
+  const days = r.byday?.map(b => b.day) ?? []
+  const n = r.interval
+
+  if (r.freq === 'DAILY') return n > 1 ? `Every ${n} days` : 'Daily'
+  if (r.freq === 'WEEKLY') {
+    if (isWorkweek(days)) return 'Weekdays'
+    const list = days.map(d => EN_DAY[d]).join(', ')
+    if (!days.length) return n > 1 ? `Every ${n} weeks` : 'Weekly'
+    return n > 1 ? `Every ${n} weeks on ${list}` : `Every ${list}`
+  }
+  if (r.freq === 'MONTHLY') {
+    const unit = n > 1 ? `Every ${n} months` : 'Monthly'
+    const b = r.byday?.[0]
+    if (b?.ord) return `${unit} on the ${ord(b.ord)} ${EN_DAY[b.day]}`
+    if (r.bymonthday?.length)
+      return `${unit} on the ${r.bymonthday.map(x => (x === -1 ? 'last day' : ord(x))).join(', ')}`
+    return unit
+  }
+  const unit = n > 1 ? `Every ${n} years` : 'Yearly'
+  if (r.bymonth?.length && r.bymonthday?.length)
+    return `${unit} on ${EN_MONTH[r.bymonth[0]! - 1]} ${r.bymonthday[0]}`
+  return unit
+}
+
+/** 给界面用的描述，比如"每月第二个周二"。默认中文 */
+export function describeRrule(src: string | Rrule, lang: Lang = 'zh'): string {
   const r = typeof src === 'string' ? parseRrule(src) : src
-  if (!r) return '重复'
+  if (!r) return lang === 'en' ? 'Repeats' : '重复'
+  if (lang === 'en') return describeEn(r)
   const every = r.interval > 1 ? `每 ${r.interval} ` : '每'
   const days = r.byday?.map(b => b.day) ?? []
-  const workdays = ['MO', 'TU', 'WE', 'TH', 'FR']
 
   if (r.freq === 'DAILY') return r.interval > 1 ? `每 ${r.interval} 天` : '每天'
   if (r.freq === 'WEEKLY') {
-    if (days.length === 5 && workdays.every(d => days.includes(d as Weekday))) return '工作日'
+    if (isWorkweek(days)) return '工作日'
     if (!days.length) return r.interval > 1 ? `每 ${r.interval} 周` : '每周'
     return `${every}${r.interval > 1 ? '周 ' : '周'}${days.map(d => CN_DAY[d]).join('、')}`
       .replace('每周周', '每周')
@@ -217,22 +264,29 @@ export function toRruleString(rule: RepeatRule): string {
   return n > 1 ? `FREQ=${freq};INTERVAL=${n}` : `FREQ=${freq}`
 }
 
-export const describeRepeat = (rule: RepeatRule): string => describeRrule(toRruleString(rule))
+export const describeRepeat = (rule: RepeatRule, lang: Lang = 'zh'): string =>
+  describeRrule(toRruleString(rule), lang)
 
 /** 从一个具体日期推出常用预设，界面上直接给选项用 */
-export function presetsFor(at: number): { label: string; rrule: string }[] {
+export function presetsFor(at: number, lang: Lang = 'zh'): { label: string; rrule: string }[] {
   const d = new Date(at)
   const wd = dow(d)
+  const day = d.getDate()
+  const month = d.getMonth() + 1
   const { nth, fromEnd } = nthOfMonth(d)
-  const ord = fromEnd === -1 ? -1 : nth
-  return [
-    { label: '每天', rrule: 'FREQ=DAILY' },
-    { label: `每周${CN_DAY[wd]}`, rrule: `FREQ=WEEKLY;BYDAY=${wd}` },
-    { label: '工作日（周一至周五）', rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR' },
-    { label: `每月 ${d.getDate()} 日`, rrule: `FREQ=MONTHLY;BYMONTHDAY=${d.getDate()}` },
-    { label: `每月${ord === -1 ? '最后一个' : CN_ORD[ord]}${CN_DAY[wd]}`,
-      rrule: `FREQ=MONTHLY;BYDAY=${ord}${wd}` },
-    { label: `每年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`,
-      rrule: `FREQ=YEARLY;BYMONTH=${d.getMonth() + 1};BYMONTHDAY=${d.getDate()}` },
+  const nthOrd = fromEnd === -1 ? -1 : nth
+  const labels = lang === 'en'
+    ? ['Daily', `Weekly on ${EN_DAY[wd]}`, 'Weekdays (Mon–Fri)', `Monthly on the ${ord(day)}`,
+       `Monthly on the ${ord(nthOrd)} ${EN_DAY[wd]}`, `Yearly on ${EN_MONTH[month - 1]} ${day}`]
+    : ['每天', `每周${CN_DAY[wd]}`, '工作日（周一至周五）', `每月 ${day} 日`,
+       `每月${nthOrd === -1 ? '最后一个' : CN_ORD[nthOrd]}${CN_DAY[wd]}`, `每年 ${month} 月 ${day} 日`]
+  const rrules = [
+    'FREQ=DAILY',
+    `FREQ=WEEKLY;BYDAY=${wd}`,
+    'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    `FREQ=MONTHLY;BYMONTHDAY=${day}`,
+    `FREQ=MONTHLY;BYDAY=${nthOrd}${wd}`,
+    `FREQ=YEARLY;BYMONTH=${month};BYMONTHDAY=${day}`,
   ]
+  return rrules.map((rrule, i) => ({ label: labels[i]!, rrule }))
 }

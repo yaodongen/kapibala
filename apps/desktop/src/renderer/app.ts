@@ -8,35 +8,43 @@ import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, presetsFor } from '@kapibala/core/rrule'
 import { matchContext, searchTasks } from '@kapibala/core/search'
 import type { Api, VaultState } from '@kapibala/ipc'
+import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
 const kapi = window.kapi
 
+/**
+ * 界面语言。主进程说了算（它知道系统语言，也存着用户改过的选择），
+ * 这里只是拿到手就用。所有文案都在 render() 时取，切换语言不用重启窗口。
+ */
+let lang: Lang = 'zh'
+let S: Strings = dict('zh')
+
 const DAY = 86400000
-const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
 const today = () => dayStart(Date.now())
-const weekday = (ts: number) => WD[new Date(ts).getDay()]!
+const weekday = (ts: number) => S.weekdays[new Date(ts).getDay()]!
+/** 中文界面用 24 小时制；英文界面跟英文的习惯，交给 Intl 去排 */
 const hhmm = (ts: number) => {
   const d = new Date(ts)
+  if (lang === 'en') return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 const dayLabel = (ts: number) => {
   const t = today()
-  if (ts === t) return '今天'
-  if (ts === t + DAY) return '明天'
-  const d = new Date(ts)
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  if (ts === t) return S.dayToday
+  if (ts === t + DAY) return S.dayTomorrow
+  return S.dayLabel(new Date(ts))
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
-/** 不做清单，所以是 5 项 */
+/** 不做清单，所以是 5 项。名字和副标题都从字典取，键名和视图 id 对齐 */
 const VIEWS = [
-  { id: 'today', ico: '☀', name: '今天',      sub: () => `${dayLabel(today())} ${weekday(today())} · 右键任务可以完成或删除` },
-  { id: 'next7', ico: '▤', name: '最近 7 天', sub: () => '按日期分组，逾期置顶' },
-  { id: 'all',   ico: '≡', name: '全部任务',  sub: () => '所有未完成的任务' },
-  { id: 'done',  ico: '✓', name: '已完成',    sub: () => '最近完成的排在前面' },
-  { id: 'trash', ico: '␥', name: '垃圾桶',    sub: () => '右键可以恢复或彻底删除' },
+  { id: 'today', ico: '☀', sub: () => S.todaySub(dayLabel(today()), weekday(today())) },
+  { id: 'next7', ico: '▤', sub: () => S.next7Sub },
+  { id: 'all',   ico: '≡', sub: () => S.allSub },
+  { id: 'done',  ico: '✓', sub: () => S.doneSub },
+  { id: 'trash', ico: '␥', sub: () => S.trashSub },
 ] as const
 type ViewId = typeof VIEWS[number]['id']
 
@@ -48,6 +56,12 @@ let selected: string | null = null
 let editing = false
 let query = ''            // 搜索词，非空时列表切成搜索结果
 let titleEditing: string | null = null   // 列表里正在就地改标题的那条
+/**
+ * boot() 拿到库状态之前不许画。主进程在 did-finish-load 时就推了一次任务，
+ * 那时 vault 还是 null，"上次选中的任务"读不出来，会选错成列表第一条 ——
+ * 而 ensureSelection 之后就不会再改主意了。
+ */
+let ready = false
 
 /**
  * 上次选中的任务由主进程存在 userData 里（不用 localStorage：Chromium 的刷盘时机
@@ -93,27 +107,65 @@ function group(list: Task[], v: ViewId): Group[] {
   }
   const byTime = (a: Task[]) => a.sort((x, y) => (x.startAt ?? 0) - (y.startAt ?? 0))
   const out: Group[] = []
-  if (over.length) out.push({ label: '已逾期', wd: '', items: byTime(over), overdue: true })
+  if (over.length) out.push({ label: S.overdue, wd: '', items: byTime(over), overdue: true })
   for (const d of [...byDay.keys()].sort((a, b) => a - b))
     out.push({ label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d)!) })
-  if (none.length) out.push({ label: '未安排', wd: '', items: none })
+  if (none.length) out.push({ label: S.unscheduled, wd: '', items: none })
   return out
 }
 
 const $ = (id: string) => document.getElementById(id)!
 
 /**
+ * index.html 里写死的那几十个字。语言一变就整块重刷，
+ * 否则会留下半中半英的界面。
+ */
+function applyStatic() {
+  document.documentElement.lang = S.htmlLang
+  const text: Array<[string, string]> = [
+    ['brandname', S.brand], ['logbtn', S.viewLog], ['langbtn', S.langOther],
+    ['welcomelang', S.langOther],
+    ['welcometitle', S.welcomeTitle], ['pick', S.welcomePick],
+    ['welcomehint', S.welcomeHint], ['welcomelog', S.welcomeLog],
+    ['dlabel', S.notesLabel],
+    ['vaultsheettitle', S.vaultSheetTitle], ['vaultadd', S.vaultOpenOther],
+    ['vaultforgetnote', S.vaultForgetNote], ['vaultclose', S.close],
+    ['logsheettitle', S.logTitle], ['logcopy', S.logCopy],
+    ['logreveal', S.logReveal], ['logclose', S.close],
+  ]
+  for (const [id, v] of text) $(id).textContent = v
+  // 这三句里有 <b>，是字典里写好的、不含用户输入的片段
+  for (const [id, v] of [['welcomesync', S.welcomeSync], ['welcomelocal', S.welcomeLocal],
+                         ['welcomeundo', S.welcomeUndo]] as Array<[string, string]>)
+    $(id).innerHTML = v
+  ;($('search') as HTMLInputElement).placeholder = S.searchPlaceholder
+  ;($('newTitle') as HTMLInputElement).placeholder = S.addPlaceholder
+  ;($('dtitle') as HTMLInputElement).placeholder = S.titlePlaceholder
+  document.querySelectorAll<HTMLElement>('[data-lang]').forEach(el => { el.title = S.langSwitchTip })
+  // 空备注的占位文字在 CSS 的 ::before 里，只能靠变量递进去
+  document.documentElement.style.setProperty('--md-empty', JSON.stringify(S.notesEmpty))
+}
+
+/** 换语言不用重启窗口：文案都是 render() 时才取的 */
+function setLang(next: Lang) {
+  lang = next
+  S = dict(next)
+  applyStatic()
+  syncNewRepeat()
+}
+
+/**
  * 重复规则的下拉。选项由日期推出来 —— "每月第二个周二""每年 8 月 26 日"
  * 这些描述离开具体日期就没法生成。
  */
 function repeatSelect(id: string, at: number, current?: Task['repeat']): string {
-  const cur = current?.rrule ?? (current ? describeRepeat(current) : '')
-  const opts = presetsFor(at)
+  const cur = current?.rrule ?? (current ? describeRepeat(current, lang) : '')
+  const opts = presetsFor(at, lang)
   const known = opts.some(o => o.rrule === cur)
   return `<select id="${id}">` +
-    `<option value="">不重复</option>` +
+    `<option value="">${esc(S.noRepeat)}</option>` +
     // 旧数据（0.0.x 的 {freq} 形状）或手写的规则：原样列出来，别把它悄悄改掉
-    (current && !known ? `<option value="${esc(cur)}" selected>${esc(describeRepeat(current))}</option>` : '') +
+    (current && !known ? `<option value="${esc(cur)}" selected>${esc(describeRepeat(current, lang))}</option>` : '') +
     opts.map(o => `<option value="${esc(o.rrule)}"${o.rrule === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('') +
     `</select>`
 }
@@ -123,28 +175,26 @@ function render() {
     const n = pick(v.id).length
     return (i === 3 ? '<div class="sep"></div>' : '') +
       `<button class="nav ${v.id === view ? 'on' : ''}" data-view="${v.id}">` +
-      `<span class="ico">${v.ico}</span>${v.name}${n ? `<span class="n">${n}</span>` : ''}</button>`
+      `<span class="ico">${v.ico}</span>${esc(S[v.id])}${n ? `<span class="n">${n}</span>` : ''}</button>`
   }).join('')
 
   const v = VIEWS.find(x => x.id === view)!
   const results = query.trim() ? searchTasks(alive(), query) : null
-  $('vtitle').textContent = results ? '搜索' : v.name
-  $('vsub').textContent = results
-    ? `“${query.trim()}” 命中 ${results.length} 条`
-    : v.sub()
+  $('vtitle').textContent = results ? S.searchTitle : S[v.id]
+  $('vsub').textContent = results ? S.searchSub(query.trim(), results.length) : v.sub()
   ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
 
   // 默认只显示库名。路径和设备信息挪到 hover 的提示里，不必常驻占三行
   $('vault').innerHTML = vault ? `<b>${esc(vault.name)}</b><span class="swap">⇅</span>` : ''
   ;($('vault') as HTMLElement).title = vault
-    ? `${vault.path}\n${vault.deviceLabel} · 共 ${vault.health.devices} 台设备\n\n点击切换库`
-    : '切换库'
+    ? S.vaultTip(vault.path, vault.deviceLabel, vault.health.devices)
+    : S.vaultSwitch
 
   const notes: string[] = []
-  if (vault?.readOnly) notes.push('<div class="banner warn">这个库的格式比当前版本新，已按只读打开</div>')
-  if (vault?.forked) notes.push('<div class="banner">这个设备目录不属于本机（库被复制或迁移过），已换用新的设备身份</div>')
-  if (vault?.health.incomplete) notes.push('<div class="banner">有文件还没从 iCloud 下载下来，任务可能显示不全，落地后会自动补上</div>')
-  if (vault?.health.badLines) notes.push(`<div class="banner">跳过了 ${vault.health.badLines} 行坏数据</div>`)
+  if (vault?.readOnly) notes.push(`<div class="banner warn">${esc(S.bannerReadOnly)}</div>`)
+  if (vault?.forked) notes.push(`<div class="banner">${esc(S.bannerForked)}</div>`)
+  if (vault?.health.incomplete) notes.push(`<div class="banner">${esc(S.bannerIncomplete)}</div>`)
+  if (vault?.health.badLines) notes.push(`<div class="banner">${esc(S.bannerBadLines(vault.health.badLines))}</div>`)
   $('banner').innerHTML = notes.join('')
 
   const visible = results ?? pick(view)
@@ -153,9 +203,9 @@ function render() {
     ? [{ label: '', wd: '', items: results }]     // 搜索结果按相关度排，不按日期分组
     : group(visible, view)
   if (!groups.reduce((n, g) => n + g.items.length, 0)) {
-    $('list').innerHTML = `<div class="empty"><span class="big">🌿</span>${
-      results ? '没有匹配的任务'
-      : view === 'trash' ? '垃圾桶是空的' : view === 'done' ? '还没有完成的任务' : '没有任务，去泡个澡'}</div>`
+    $('list').innerHTML = `<div class="empty"><span class="big">🌿</span>${esc(
+      results ? S.emptySearch
+      : view === 'trash' ? S.emptyTrash : view === 'done' ? S.emptyDone : S.emptyList)}</div>`
     renderDetail()
     return
   }
@@ -170,7 +220,7 @@ function row(t: Task): string {
   // 有具体时间就带上周几："周三 18:00"。列表里不分组的视图（全部/搜索）尤其需要
   const time = t.startAt !== undefined && !t.isAllDay
     ? `${weekday(t.startAt)} ${hhmm(t.startAt)}` : ''
-  const rep = t.repeat ? describeRepeat(t.repeat) : ''
+  const rep = t.repeat ? describeRepeat(t.repeat, lang) : ''
   const first = query.trim()
     ? (t.notes?.trim() ? matchContext(t, query, 46) : '')
     : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
@@ -194,7 +244,7 @@ function renderDetail() {
   if (!t) {                                   // 备注栏常驻，没选中就显示提示
     $('dtitle').textContent = ''
     $('dmeta').innerHTML = ''
-    $('dbody').innerHTML = '<div class="dempty">选中一个任务，在这里写备注。<br>支持 Markdown。</div>'
+    $('dbody').innerHTML = `<div class="dempty">${S.notesNoSelection}</div>`
     return
   }
 
@@ -203,20 +253,20 @@ function renderDetail() {
   const iso = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
   const bits: string[] = []
   // 重复规则做成下拉，已创建的任务也能改
-  if (t.completedAt) bits.push('已完成')
-  if (t.deleted) bits.push('在垃圾桶里')
+  if (t.completedAt) bits.push(S.isDone)
+  if (t.deleted) bits.push(S.isTrashed)
   // 日期和时间可以直接改；清空日期就是"未安排"
   $('dmeta').innerHTML =
     `<input type="date" id="ddate" value="${iso}">` +
     `<input type="time" id="dtime" value="${d && !t.isAllDay ? hhmm(t.startAt!) : ''}">` +
-    (d ? `<button class="dclear" id="dclear" title="改成未安排">清除</button>` : '') +
+    (d ? `<button class="dclear" id="dclear" title="${esc(S.clearTip)}">${esc(S.clear)}</button>` : '') +
     repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
   $('dbody').innerHTML = editing
     ? `<textarea class="noteedit" data-noteedit="${t.id}"
-         placeholder="支持 Markdown：**粗体** *斜体* \`代码\` - 列表 [链接](https://…)">${esc(t.notes ?? '')}</textarea>
-       <div class="notehint">⌘↩ 保存 · esc 取消</div>`
+         placeholder="${esc(S.notesEditPlaceholder)}">${esc(t.notes ?? '')}</textarea>
+       <div class="notehint">${esc(S.notesHint)}</div>`
     : `<div class="md" data-noteview="${t.id}">${renderMarkdown(t.notes ?? '')}</div>`
 }
 
@@ -301,8 +351,8 @@ document.addEventListener('focusout', (e) => {
 function syncNewRepeat() {
   const at = di.value ? +new Date(`${di.value}T00:00`) : today()
   const keep = ri.value
-  ri.innerHTML = `<option value="">不重复</option>` +
-    presetsFor(at).map(o => `<option value="${o.rrule}">${o.label}</option>`).join('')
+  ri.innerHTML = `<option value="">${esc(S.noRepeat)}</option>` +
+    presetsFor(at, lang).map(o => `<option value="${o.rrule}">${esc(o.label)}</option>`).join('')
   ri.value = keep && Array.from(ri.options).some(o => o.value === keep) ? keep : ''
 }
 
@@ -329,9 +379,9 @@ async function openVaultList() {
       <span class="dot">${v.current ? '●' : ''}</span>
       <span><span class="nm">${esc(v.name)}</span>
         <span class="pt">${esc(v.path.replace(/^\/Users\/[^/]+/, '~'))}</span></span>
-      ${v.available ? '' : '<span class="miss">找不到</span>'}
+      ${v.available ? '' : `<span class="miss">${esc(S.vaultMissing)}</span>`}
       <span class="forget" data-forget="${v.id}" role="button"
-            aria-label="从列表关闭" title="从列表关闭，不删除文件夹">✕</span>
+            aria-label="${esc(S.vaultForget)}" title="${esc(S.vaultForgetTip)}">✕</span>
     </button>`).join('')
   ;($('vaultsheet') as HTMLElement).hidden = false
 }
@@ -346,7 +396,7 @@ async function switchVault(id: string) {
   } catch (e) {
     // 失败就把原因写在那一行上，别把面板关掉
     const pt = document.querySelector(`[data-vault="${id}"] .pt`) as HTMLElement | null
-    if (pt) pt.textContent = `打不开：${(e as Error).message}`
+    if (pt) pt.textContent = S.vaultCantOpen((e as Error).message)
   }
 }
 
@@ -462,16 +512,27 @@ document.addEventListener('click', (e) => {
 $('logcopy').addEventListener('click', async () => {
   await kapi['log:copy']()
   const b = $('logcopy'); const old = b.textContent
-  b.textContent = '已复制'; setTimeout(() => { b.textContent = old }, 1200)
+  b.textContent = S.logCopied; setTimeout(() => { b.textContent = old }, 1200)
 })
 $('logreveal').addEventListener('click', () => void kapi['log:reveal']())
+
+/**
+ * 语言按钮上写的是"要切过去的那个语言"，一眼就知道点了会变成什么。
+ * 引导页上也有一个 —— 还没选库的时候侧边栏是藏起来的，否则中文系统上的
+ * 英文用户第一屏就没有出路。
+ */
+document.addEventListener('click', async (e) => {
+  if (!(e.target as HTMLElement).closest('[data-lang]')) return
+  setLang(await kapi['ui:setLang'](lang === 'zh' ? 'en' : 'zh'))
+  render()
+})
 
 // 渲染进程自己的报错也要进同一份日志，否则用户看到的日志里没有真正的原因
 window.addEventListener('error', (e) => {
   void kapi['log:renderer'](`${e.message} @ ${e.filename}:${e.lineno}`)
 })
 window.addEventListener('unhandledrejection', (e) => {
-  void kapi['log:renderer'](`未处理的拒绝：${String((e as PromiseRejectionEvent).reason)}`)
+  void kapi['log:renderer'](`未处理的拒绝：${String((e as PromiseRejectionEvent).reason)}`)   // 日志是给开发者看的，不翻译
 })
 
 const si = $('search') as HTMLInputElement
@@ -480,7 +541,7 @@ si.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { si.value = ''; query = ''; render() }
 })
 
-kapi.onTasksChanged((t) => { tasks = t; render() })
+kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
 kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
   selected = id
   remember(id)
@@ -501,7 +562,7 @@ $('pick').addEventListener('click', async () => {
     const v = await kapi['vault:pick']()
     // 从 iCloud 同步过来的库可能要等文件落地，这里必须有反馈，否则看着像死了
     btn.disabled = true
-    btn.textContent = '正在打开…' 
+    btn.textContent = S.welcomeOpening
     if (!v) return                      // 用户取消或选了不能用的目录，留在引导页
     vault = v
     tasks = await kapi['task:list']()
@@ -510,15 +571,17 @@ $('pick').addEventListener('click', async () => {
     ti.focus()
   } catch (e) {
     // 整段都要包住：不 catch 的话异常烂在这里，用户只看到点了没反应
-    hint.textContent = `打不开这个文件夹：${(e as Error).message}`
+    hint.textContent = S.welcomeFailed((e as Error).message)
   } finally {
     btn.disabled = false
-    btn.textContent = '选择文件夹…'
+    btn.textContent = S.welcomePick
   }
 })
 
 async function boot() {
+  setLang(await kapi['ui:lang']())
   vault = await kapi['vault:state']()
+  ready = true
   if (!vault) { showWelcome(true); return }
   tasks = await kapi['task:list']()
   render()

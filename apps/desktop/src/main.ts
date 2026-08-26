@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
 import type { TaskDraftIpc, VaultState } from '@kapibala/ipc'
+import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
 process.on('uncaughtException', e => log('error', '未捕获异常', e))
@@ -21,13 +22,36 @@ let watcher: FSWatcher | null = null
  * 那个文件是和 CLI 共享的库注册表，别混进界面的东西。
  */
 const uiFile = () => `${env.userDataDir}/ui.json`
-type UiState = { lastTask?: Record<string, string> }
+type UiState = { lastTask?: Record<string, string>; lang?: Lang }
 function readUi(): UiState {
   try { return JSON.parse(readFileSync(uiFile(), 'utf8')) as UiState } catch { return {} }
 }
 function writeUi(ui: UiState) {
   try { writeFileSync(uiFile(), JSON.stringify(ui, null, 2) + '\n') } catch (e) { log('error', '写界面状态失败', e) }
 }
+
+/**
+ * 系统语言。用 getPreferredSystemLanguages() / getSystemLocale()，不用 getLocale()：
+ * 后者是 Chromium 的界面语言，缺少对应语言包时会谎报成 en-US
+ * （实测 --lang=fr-FR 就返回 en-US），法语系统会因此拿到英文界面。
+ */
+function systemLang(): Lang {
+  const preferred = app.getPreferredSystemLanguages()
+  return langOf(preferred[0] ?? app.getSystemLocale())
+}
+
+/**
+ * 界面语言：改过就听改过的，没改过就跟系统走。
+ * 存在 ui.json 里 —— 这是本机的偏好，不该跟着 iCloud 同步到别人的 Mac 上。
+ * KAPIBALA_LANG 只为测试和截图而存在，和 KAPIBALA_USER_DATA 是一路货。
+ */
+function lang(): Lang {
+  const forced = process.env['KAPIBALA_LANG']
+  if (isLang(forced)) return forced
+  const saved = readUi().lang
+  return isLang(saved) ? saved : systemLang()
+}
+const S = () => t(lang())
 
 const stateOf = (s: Store): VaultState => ({
   id: s.vault.entry.id,
@@ -73,11 +97,12 @@ async function openVault(path: string, create = false): Promise<Store> {
 
 /** 首次启动：没有库就让用户选一个目录。空目录 = 新建，已有库 = 打开 */
 async function pickVault(): Promise<Store | null> {
+  const s = S()
   const r = await dialog.showOpenDialog({
-    title: '选择一个文件夹作为 Kapibala 库',
-    message: '想在多台 Mac 之间同步，就选 iCloud Drive 里的目录',
+    title: s.pickTitle,
+    message: s.pickMessage,
     properties: ['openDirectory', 'createDirectory'],
-    buttonLabel: '使用这个文件夹',
+    buttonLabel: s.pickButton,
   })
   const dir = r.filePaths[0]
   log('info', '目录选择结果', { canceled: r.canceled, dir })
@@ -95,10 +120,10 @@ async function pickVault(): Promise<Store | null> {
     let lastErr: unknown
     for (let i = 0; i < 8; i++) {
       try {
-        const s = await openVault(dir, !isVault)
-        log('info', '库已就绪', { path: s.vault.entry.path, device: s.vault.device.deviceId,
-                                  readOnly: s.vault.readOnly, forked: s.vault.forked })
-        return s
+        const opened = await openVault(dir, !isVault)
+        log('info', '库已就绪', { path: opened.vault.entry.path, device: opened.vault.device.deviceId,
+                                  readOnly: opened.vault.readOnly, forked: opened.vault.forked })
+        return opened
       } catch (err) {
         lastErr = err
         if (!isNotDownloaded(err)) throw err
@@ -114,16 +139,19 @@ async function pickVault(): Promise<Store | null> {
     log('error', '打开库失败', { dir, isVault, entries, error: String(e) })
     await dialog.showMessageBox({
       type: 'warning',
-      message: '这个文件夹不能用作库',
+      message: s.pickFailed,
       detail: (e as Error).message,
-      buttons: ['好'],
+      buttons: [s.ok],
     })
     return null
   }
 }
 
 async function boot(): Promise<Store | null> {
-  log('info', '启动', { version: app.getVersion(), packaged: app.isPackaged, arch: process.arch })
+  // 语言相关的三个值都记下来：用户说"界面语言不对"时，这一行就是答案
+  log('info', '启动', { version: app.getVersion(), packaged: app.isPackaged, arch: process.arch,
+                        lang: lang(), systemLocale: app.getSystemLocale(),
+                        preferred: app.getPreferredSystemLanguages() })
   const reg = await readRegistry(env)
   const entry = reg.vaults.find(v => v.id === reg.lastVaultId) ?? reg.vaults[0]
   if (!entry) { log('info', '还没有库，显示引导页'); return null }
@@ -132,8 +160,8 @@ async function boot(): Promise<Store | null> {
 }
 
 function need(): Store {
-  if (!store) throw new Error('还没有打开任何库')
-  if (store.vault.readOnly) throw new Error('这个库的格式比当前版本新，已按只读打开')
+  if (!store) throw new Error(S().errNoVault)
+  if (store.vault.readOnly) throw new Error(S().bannerReadOnly)
   return store
 }
 const write = <T,>(fn: (s: Store) => Promise<T>) => {
@@ -151,7 +179,7 @@ const handle = (ch: string, fn: (...a: never[]) => unknown) =>
 handle('vault:forget', async (id: string) => {
   const reg = await readRegistry(env)
   const gone = reg.vaults.find(v => v.id === id)
-  if (!gone) throw new Error('这个库已经不在列表里了')
+  if (!gone) throw new Error(S().errVaultGone)
   reg.vaults = reg.vaults.filter(v => v.id !== id)
   const wasCurrent = store?.vault.entry.id === id
   reg.lastVaultId = wasCurrent ? reg.vaults[0]?.id : reg.lastVaultId
@@ -174,19 +202,20 @@ handle('vault:forget', async (id: string) => {
 handle('task:menu', (id: string) => {
   const t = store?.task(id)
   if (!t || !win) return
+  const L = S()
   const items: Electron.MenuItemConstructorOptions[] = t.deleted
     ? [
-        { label: '恢复', click: () => void write(s => s.restore(id)) },
+        { label: L.menuRestore, click: () => void write(s => s.restore(id)) },
         { type: 'separator' },
-        { label: '彻底删除', click: () => void write(s => s.purge(id)) },
+        { label: L.menuPurge, click: () => void write(s => s.purge(id)) },
       ]
     : [
-        { label: '备注', click: () => win?.webContents.send('task:show', id) },
+        { label: L.menuNotes, click: () => win?.webContents.send('task:show', id) },
         { type: 'separator' },
-        { label: t.completedAt ? '标记为未完成' : '完成',
+        { label: t.completedAt ? L.menuUncomplete : L.menuComplete,
           click: () => void write(s => (t.completedAt ? s.uncomplete(id) : s.complete(id).then(() => undefined))) },
         { type: 'separator' },
-        { label: '删除', click: () => void write(s => s.trash(id)) },
+        { label: L.menuDelete, click: () => void write(s => s.trash(id)) },
       ]
   log('info', '打开任务右键菜单', { id, deleted: t.deleted })
   Menu.buildFromTemplate(items).popup({ window: win })
@@ -204,7 +233,7 @@ handle('vault:list', async () => {
 handle('vault:open', async (id: string) => {
   const reg = await readRegistry(env)
   const entry = reg.vaults.find(v => v.id === id)
-  if (!entry) throw new Error('这个库已经不在列表里了')
+  if (!entry) throw new Error(S().errVaultGone)
   log('info', '切换库', { from: store?.vault.entry.path, to: entry.path })
   const s = await openVault(entry.path)   // openVault 内部会把它记为 lastVaultId
   push()
@@ -215,6 +244,14 @@ handle('ui:lastTask', (taskId: string) => {
   if (!store) return
   const ui = readUi()
   writeUi({ ...ui, lastTask: { ...ui.lastTask, [store.vault.entry.id]: taskId } })
+})
+
+handle('ui:lang', () => lang())
+handle('ui:setLang', (next: Lang) => {
+  if (!isLang(next)) throw new Error(`不认识的语言：${String(next)}`)
+  writeUi({ ...readUi(), lang: next })
+  log('info', '切换界面语言', { lang: next })
+  return next
 })
 
 handle('log:read', () => ({ text: readLog(), path: logPath() }))
