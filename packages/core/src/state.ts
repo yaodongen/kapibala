@@ -55,7 +55,15 @@ export function materialize(id: string, f: Fields): Task {
   }
 }
 
-export function tasksOf(state: State): Task[] {
+/**
+ * 物化任务列表。**排除已"彻底删除"（_purgedAt）的**——那是垃圾桶里彻底删掉的东西，
+ * 界面和 CLI 都不该再看到它。
+ *
+ * 注意它在磁盘上仍然存在：存储层永不物理删除（真删在分布式下会导致数据复活，
+ * 见 storage.md §5.1）。所以过滤只能发生在这一层，不能指望"日志里没有它"。
+ */
+export function tasksOf(state: State, includePurged = false): Task[] {
   const byId = state['task'] ?? {}
-  return Object.keys(byId).map(id => materialize(id, byId[id]!))
+  const all = Object.keys(byId).map(id => materialize(id, byId[id]!))
+  return includePurged ? all : all.filter(t => t.purgedAt === undefined)
 }

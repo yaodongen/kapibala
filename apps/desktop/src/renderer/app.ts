@@ -5,6 +5,8 @@
 import type { Task } from '@kapibala/core'
 // 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
+import { describeRepeat, presetsFor } from '@kapibala/core/rrule'
+import { matchContext, searchTasks } from '@kapibala/core/search'
 import type { Api, VaultState } from '@kapibala/ipc'
 
 declare global { interface Window { kapi: Api } }
@@ -30,11 +32,11 @@ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 
 /** 不做清单，所以是 5 项 */
 const VIEWS = [
-  { id: 'today', ico: '☀', name: '今天',      sub: () => `${dayLabel(today())} ${weekday(today())}` },
+  { id: 'today', ico: '☀', name: '今天',      sub: () => `${dayLabel(today())} ${weekday(today())} · 右键任务可以完成或删除` },
   { id: 'next7', ico: '▤', name: '最近 7 天', sub: () => '按日期分组，逾期置顶' },
   { id: 'all',   ico: '≡', name: '全部任务',  sub: () => '所有未完成的任务' },
   { id: 'done',  ico: '✓', name: '已完成',    sub: () => '最近完成的排在前面' },
-  { id: 'trash', ico: '␥', name: '垃圾桶',    sub: () => '删除的任务，可以恢复' },
+  { id: 'trash', ico: '␥', name: '垃圾桶',    sub: () => '右键可以恢复或彻底删除' },
 ] as const
 type ViewId = typeof VIEWS[number]['id']
 
@@ -44,6 +46,8 @@ let view: ViewId = 'today'
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
+let query = ''            // 搜索词，非空时列表切成搜索结果
+let titleEditing: string | null = null   // 列表里正在就地改标题的那条
 
 /**
  * 上次选中的任务由主进程存在 userData 里（不用 localStorage：Chromium 的刷盘时机
@@ -98,6 +102,22 @@ function group(list: Task[], v: ViewId): Group[] {
 
 const $ = (id: string) => document.getElementById(id)!
 
+/**
+ * 重复规则的下拉。选项由日期推出来 —— "每月第二个周二""每年 8 月 26 日"
+ * 这些描述离开具体日期就没法生成。
+ */
+function repeatSelect(id: string, at: number, current?: Task['repeat']): string {
+  const cur = current?.rrule ?? (current ? describeRepeat(current) : '')
+  const opts = presetsFor(at)
+  const known = opts.some(o => o.rrule === cur)
+  return `<select id="${id}">` +
+    `<option value="">不重复</option>` +
+    // 旧数据（0.0.x 的 {freq} 形状）或手写的规则：原样列出来，别把它悄悄改掉
+    (current && !known ? `<option value="${esc(cur)}" selected>${esc(describeRepeat(current))}</option>` : '') +
+    opts.map(o => `<option value="${esc(o.rrule)}"${o.rrule === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('') +
+    `</select>`
+}
+
 function render() {
   $('nav').innerHTML = VIEWS.map((v, i) => {
     const n = pick(v.id).length
@@ -107,15 +127,18 @@ function render() {
   }).join('')
 
   const v = VIEWS.find(x => x.id === view)!
-  $('vtitle').textContent = v.name
-  $('vsub').textContent = v.sub()
+  const results = query.trim() ? searchTasks(alive(), query) : null
+  $('vtitle').textContent = results ? '搜索' : v.name
+  $('vsub').textContent = results
+    ? `“${query.trim()}” 命中 ${results.length} 条`
+    : v.sub()
   ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
 
-  $('vault').innerHTML = vault
-    ? `<span class="swap">⇅</span><b>${esc(vault.name)}</b><br>` +
-      `${esc(vault.path.replace(/^\/Users\/[^/]+/, '~'))}<br>` +
-      `${esc(vault.deviceLabel)} · 共 ${vault.health.devices} 台设备`
-    : ''
+  // 默认只显示库名。路径和设备信息挪到 hover 的提示里，不必常驻占三行
+  $('vault').innerHTML = vault ? `<b>${esc(vault.name)}</b><span class="swap">⇅</span>` : ''
+  ;($('vault') as HTMLElement).title = vault
+    ? `${vault.path}\n${vault.deviceLabel} · 共 ${vault.health.devices} 台设备\n\n点击切换库`
+    : '切换库'
 
   const notes: string[] = []
   if (vault?.readOnly) notes.push('<div class="banner warn">这个库的格式比当前版本新，已按只读打开</div>')
@@ -124,12 +147,15 @@ function render() {
   if (vault?.health.badLines) notes.push(`<div class="banner">跳过了 ${vault.health.badLines} 行坏数据</div>`)
   $('banner').innerHTML = notes.join('')
 
-  const visible = pick(view)
+  const visible = results ?? pick(view)
   ensureSelection(visible)
-  const groups = group(visible, view)
+  const groups = results
+    ? [{ label: '', wd: '', items: results }]     // 搜索结果按相关度排，不按日期分组
+    : group(visible, view)
   if (!groups.reduce((n, g) => n + g.items.length, 0)) {
     $('list').innerHTML = `<div class="empty"><span class="big">🌿</span>${
-      view === 'trash' ? '垃圾桶是空的' : view === 'done' ? '还没有完成的任务' : '没有任务，去泡个澡'}</div>`
+      results ? '没有匹配的任务'
+      : view === 'trash' ? '垃圾桶是空的' : view === 'done' ? '还没有完成的任务' : '没有任务，去泡个澡'}</div>`
     renderDetail()
     return
   }
@@ -141,21 +167,23 @@ function render() {
 }
 
 function row(t: Task): string {
-  const time = t.startAt !== undefined && !t.isAllDay ? hhmm(t.startAt) : ''
-  const rep = t.repeat ? ({ DAILY: '每天', WEEKLY: '每周', MONTHLY: '每月' })[t.repeat.freq] : ''
-  const first = t.notes?.trim() ? notePreview(t.notes, 46) : ''
-  const acts = t.deleted
-    ? `<button data-act="task:restore" data-id="${t.id}">恢复</button>`
-    : `<button class="del" data-act="task:trash" data-id="${t.id}">删除</button>`
+  // 有具体时间就带上周几："周三 18:00"。列表里不分组的视图（全部/搜索）尤其需要
+  const time = t.startAt !== undefined && !t.isAllDay
+    ? `${weekday(t.startAt)} ${hhmm(t.startAt)}` : ''
+  const rep = t.repeat ? describeRepeat(t.repeat) : ''
+  const first = query.trim()
+    ? (t.notes?.trim() ? matchContext(t, query, 46) : '')
+    : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
   return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''}"
                data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
-    <div class="body"><div class="title">${esc(t.title)}</div>${
-      time || rep ? `<div class="meta">${time ? `<span>${time}</span>` : ''}${
-        rep ? `<span class="tag">↻ ${rep}</span>` : ''}</div>` : ''}${
-      first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>
-    <div class="acts">${acts}</div>
+    <div class="body">${titleEditing === t.id
+      ? `<input class="titleedit" data-titleedit="${t.id}" value="${esc(t.title)}">`
+      : `<div class="title">${esc(t.title)}</div>`}${
+      rep ? `<div class="meta"><span class="tag">↻ ${rep}</span></div>` : ''}${
+      first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>${
+    time ? `<div class="when">${time}</div>` : ''}
   </div>`
 }
 
@@ -170,11 +198,11 @@ function renderDetail() {
     return
   }
 
-  $('dtitle').textContent = t.title
+  ;($('dtitle') as HTMLInputElement).value = t.title
   const d = t.startAt !== undefined ? new Date(t.startAt) : null
   const iso = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
   const bits: string[] = []
-  if (t.repeat) bits.push(`↻ ${({ DAILY: '每天', WEEKLY: '每周', MONTHLY: '每月' })[t.repeat.freq]}`)
+  // 重复规则做成下拉，已创建的任务也能改
   if (t.completedAt) bits.push('已完成')
   if (t.deleted) bits.push('在垃圾桶里')
   // 日期和时间可以直接改；清空日期就是"未安排"
@@ -182,6 +210,7 @@ function renderDetail() {
     `<input type="date" id="ddate" value="${iso}">` +
     `<input type="time" id="dtime" value="${d && !t.isAllDay ? hhmm(t.startAt!) : ''}">` +
     (d ? `<button class="dclear" id="dclear" title="改成未安排">清除</button>` : '') +
+    repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
   $('dbody').innerHTML = editing
@@ -207,6 +236,16 @@ document.addEventListener('click', async (e) => {
     const id = taskRow.dataset['task']!
     selected = id
     remember(id)
+    if (target.closest('.title')) {
+      // 点标题就地改标题，此时别把焦点让给备注编辑框
+      titleEditing = id
+      editing = false
+      render()
+      const el = document.querySelector<HTMLInputElement>('[data-titleedit]')
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
+      return
+    }
+    titleEditing = null
     // 还没写过备注就直接进编辑，省一次点击
     editing = !tasks.find(t => t.id === id)?.notes?.trim()
     render(); focusEditor(); return
@@ -258,18 +297,28 @@ document.addEventListener('focusout', (e) => {
   if (el) void saveNote(el)
 })
 
+/** 添加栏的重复下拉：选项跟着所选日期走，没选就按今天 */
+function syncNewRepeat() {
+  const at = di.value ? +new Date(`${di.value}T00:00`) : today()
+  const keep = ri.value
+  ri.innerHTML = `<option value="">不重复</option>` +
+    presetsFor(at).map(o => `<option value="${o.rrule}">${o.label}</option>`).join('')
+  ri.value = keep && Array.from(ri.options).some(o => o.value === keep) ? keep : ''
+}
+
 const ti = $('newTitle') as HTMLInputElement
 const di = $('newDate') as HTMLInputElement
 const ri = $('newRepeat') as HTMLSelectElement
 ti.addEventListener('keydown', async (e) => {
   if (e.key !== 'Enter' || !ti.value.trim()) return
-  const at = di.value ? +new Date(`${di.value}T00:00`) : view === 'today' ? today() : undefined
+  const at = di.value ? +new Date(`${di.value}T00:00`) : today()   // 没选日期就是今天
   await kapi['task:create']({
     title: ti.value.trim(),
-    ...(at !== undefined ? { startAt: at } : {}),
-    ...(ri.value ? { repeat: { freq: ri.value as 'DAILY' } } : {}),
+    startAt: at,
+    ...(ri.value ? { repeat: { rrule: ri.value } } : {}),
   })
   ti.value = ''; di.value = ''; ri.value = ''
+  syncNewRepeat()
 })
 
 /* ── 切换库 ── */
@@ -325,6 +374,53 @@ $('vaultadd').addEventListener('click', async () => {
   render()
 })
 
+/** 详情栏里的标题就地编辑。回车或失焦保存，esc 还原；不接受清空 */
+async function saveTitle() {
+  const el = $('dtitle') as HTMLInputElement
+  const id = selected
+  if (!id) return
+  const t = tasks.find(x => x.id === id)
+  const next = el.value.trim()
+  if (!t || next === t.title) return
+  if (!next) { el.value = t.title; return }     // 没有标题的任务只会让人困惑
+  await kapi['task:setField'](id, 'title', next)
+}
+
+$('dtitle').addEventListener('keydown', (e) => {
+  const el = e.target as HTMLInputElement
+  // 回车直接保存，不绕 blur —— 那条路依赖焦点状态，边界情况下会静默不保存
+  if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); void saveTitle(); el.blur() }
+  if ((e as KeyboardEvent).key === 'Escape') {
+    const t = tasks.find(x => x.id === selected)
+    if (t) el.value = t.title
+    el.blur()
+  }
+})
+$('dtitle').addEventListener('blur', () => void saveTitle())
+
+/** 列表里就地改标题。和详情栏那个走同一条写入路径，规则也一样：不接受清空 */
+async function saveRowTitle(el: HTMLInputElement) {
+  if (el.dataset['closed']) return          // render() 摘掉元素时会再触发一次 blur
+  el.dataset['closed'] = '1'
+  const id = el.dataset['titleedit']!
+  const next = el.value.trim()
+  const t = tasks.find(x => x.id === id)
+  titleEditing = null
+  if (!t || !next || next === t.title) { render(); return }
+  await kapi['task:setField'](id, 'title', next)
+}
+
+document.addEventListener('keydown', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLInputElement>('[data-titleedit]')
+  if (!el) return
+  if (e.key === 'Enter') { e.preventDefault(); void saveRowTitle(el) }
+  if (e.key === 'Escape') { e.preventDefault(); el.dataset['closed'] = '1'; titleEditing = null; render() }
+})
+document.addEventListener('focusout', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLInputElement>('[data-titleedit]')
+  if (el) void saveRowTitle(el)
+})
+
 /** 详情栏里改日期/时间。空日期 = 未安排；没填时间 = 全天 */
 async function saveWhen() {
   if (!selected) return
@@ -339,6 +435,11 @@ async function saveWhen() {
 document.addEventListener('change', (e) => {
   const el = e.target as HTMLElement
   if (el.id === 'ddate' || el.id === 'dtime') void saveWhen()
+  if (el.id === 'drepeat' && selected) {
+    const v = (el as HTMLSelectElement).value
+    void kapi['task:setField'](selected, 'repeat', v ? { rrule: v } : null)
+  }
+  if (el.id === 'newDate') syncNewRepeat()      // 换了日期，预设跟着变
 })
 
 /* ── 日志 ── */
@@ -371,6 +472,12 @@ window.addEventListener('error', (e) => {
 })
 window.addEventListener('unhandledrejection', (e) => {
   void kapi['log:renderer'](`未处理的拒绝：${String((e as PromiseRejectionEvent).reason)}`)
+})
+
+const si = $('search') as HTMLInputElement
+si.addEventListener('input', () => { query = si.value; render() })
+si.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { si.value = ''; query = ''; render() }
 })
 
 kapi.onTasksChanged((t) => { tasks = t; render() })

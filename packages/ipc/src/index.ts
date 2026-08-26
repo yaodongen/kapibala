@@ -1,5 +1,5 @@
 /** 主进程与渲染进程共享的契约。渲染进程只认识这些，永远看不到 op 和 HLC */
-import type { Task } from '@kapibala/core'
+import type { RepeatRule, Task } from '@kapibala/core'
 
 export type VaultState = {
   id: string
@@ -25,7 +25,7 @@ export type TaskDraftIpc = {
   title: string
   startAt?: number
   isAllDay?: boolean
-  repeat?: { freq: 'DAILY' | 'WEEKLY' | 'MONTHLY'; mode?: 'fixed' | 'afterCompletion' }
+  repeat?: RepeatRule
 }
 
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */

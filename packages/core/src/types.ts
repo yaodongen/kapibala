@@ -50,10 +50,15 @@ export type VaultEntry = {
 export type VaultsFile = { version: 1; lastVaultId?: string; vaults: VaultEntry[] }
 
 export type RepeatRule = {
-  freq: 'DAILY' | 'WEEKLY' | 'MONTHLY'
+  /** RFC 5545 RRULE 子集，如 "FREQ=MONTHLY;BYDAY=2TU"。新数据都写这个 */
+  rrule?: string
+  /** 0.0.x 写下的形状，只读不写。见 repeat.ts 的 toRruleString */
+  freq?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'
   interval?: number
   /** 'fixed' 按原计划推进；'afterCompletion' 从完成日推进 */
   mode?: 'fixed' | 'afterCompletion'
+  /** "每周一 9:00"这条规则本身是绑时区的 */
+  tz?: string
 }
 
 export type Reminder = { id: string; offsetMin?: number; at?: number }

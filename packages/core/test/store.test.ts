@@ -252,3 +252,32 @@ describe('第二台 Mac：库文件还是 iCloud 占位符', () => {
     expect(b.tasks().map(t => t.title)).toContain('Mac A 写的')
   })
 })
+
+describe('彻底删除', () => {
+  it('purge 之后任务列表里就没有它了', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '要彻底删掉的' })
+    await s.trash(id)
+    expect(s.tasks().some(t => t.id === id)).toBe(true)     // 在垃圾桶里还看得到
+    await s.purge(id)
+    expect(s.tasks().some(t => t.id === id)).toBe(false)    // 彻底删除后就看不到了
+  })
+
+  it('但磁盘上并没有真删 —— 真删在分布式下会导致数据复活', async () => {
+    const { fs, s } = await setup()
+    const id = await s.add({ title: '仍在日志里' })
+    await s.trash(id); await s.purge(id)
+    const seg = [...fs.files.entries()].find(([k]) => k.endsWith('000001.jsonl'))![1]
+    const { ops } = parseSegment(seg)
+    expect(ops.some(o => o.f === 'title' && o.val === '仍在日志里')).toBe(true)
+    expect(ops.some(o => o.f === '_purgedAt')).toBe(true)
+  })
+
+  it('重开之后也不会再冒出来', async () => {
+    const { fs, a, s } = await setup()
+    const id = await s.add({ title: '别再回来' })
+    await s.trash(id); await s.purge(id)
+    const again = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua' }), V)
+    expect(again.tasks().some(t => t.id === id)).toBe(false)
+  })
+})

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Store, readRegistry, writeRegistry, type Task } from '@kapibala/core'
+import { Store, describeRepeat, readRegistry, searchTasks, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, withLock } from '@kapibala/adapters-node'
 import { resolve } from 'node:path'
 import { dayStart, hhmm, labelOf, parseWhen, today, weekday } from './dates.ts'
@@ -31,6 +31,8 @@ const HELP = `${C.b}kapi${C.off} —— 卡皮巴拉命令行
     kapi rm <id>                 删除到垃圾桶
     kapi trash                   看垃圾桶
     kapi restore <id>            从垃圾桶恢复
+    kapi purge <id>              彻底删除（列表里不再出现；日志里仍留有痕迹）
+    kapi search <关键词>         搜索标题和备注（空格分隔多个词按全部命中）
     kapi doctor                  库和同步状态
 
   ${C.b}--at 支持${C.off}  today / tomorrow / 明天 / fri / 周五 / +3d / 2026-08-28 / 2026-08-28T19:30 / 19:30
@@ -66,7 +68,7 @@ async function open(): Promise<Store> {
 }
 
 /** 逾期置顶，其余按日期升序，未安排垫底 */
-function render(list: Task[], opts: { showDone?: boolean } = {}) {
+function render(list: Task[], opts: { showDone?: boolean; flat?: boolean } = {}) {
   if (!list.length) { console.log(`${C.dim}（空）${C.off}`); return }
   const t0 = today()
   const over: Task[] = [], none: Task[] = [], byDay = new Map<number, Task[]>()
@@ -86,7 +88,7 @@ function render(list: Task[], opts: { showDone?: boolean } = {}) {
     for (const t of items.sort((a, b) => (a.startAt ?? 0) - (b.startAt ?? 0))) {
       const box = t.completedAt ? `${C.green}✓${C.off}` : '○'
       const time = t.startAt !== undefined && !t.isAllDay ? ` ${C.dim}${hhmm(t.startAt)}${C.off}` : ''
-      const rep = t.repeat ? ` ${C.dim}↻${{ DAILY: '每天', WEEKLY: '每周', MONTHLY: '每月' }[t.repeat.freq]}${C.off}` : ''
+      const rep = t.repeat ? ` ${C.dim}↻${describeRepeat(t.repeat)}${C.off}` : ''
       const title = t.completedAt && opts.showDone ? `${C.dim}${t.title}${C.off}` : t.title
       console.log(`  ${box} ${title}${time}${rep}  ${C.dim}${short(t.id)}${C.off}`)
     }
@@ -200,6 +202,12 @@ async function main() {
       console.log(`${C.dim}已移入垃圾桶：${t.title}（kapi restore ${short(t.id)} 可恢复）${C.off}`)
       return
     }
+    case 'purge': {
+      const t = resolveId(s, rest[0] ?? '')
+      await withLock(vaultId, () => s.purge(t.id))
+      console.log(`${C.dim}已彻底删除：${t.title}（列表里不再出现，但日志里仍留有痕迹 —— 存储层永不物理删除）${C.off}`)
+      return
+    }
     case 'restore': {
       const t = resolveId(s, rest[0] ?? '')
       await withLock(vaultId, () => s.restore(t.id))
@@ -208,6 +216,14 @@ async function main() {
     }
     case 'trash': render(s.tasks().filter(t => t.deleted), { showDone: true }); return
     case 'done-list': render(alive().filter(t => t.completedAt), { showDone: true }); return
+    case 'search': {
+      const q = rest.join(' ').trim()
+      if (!q) throw new Error('搜什么？例：kapi search 周报')
+      const hit = searchTasks(alive(), q)
+      console.log(`${C.dim}“${q}” 命中 ${hit.length} 条${C.off}`)
+      render(hit, { showDone: true })
+      return
+    }
     case 'doctor': {
       const h = s.health
       console.log(`库    ${C.b}${s.vault.entry.name}${C.off}  ${C.dim}${s.vault.entry.path}${C.off}`)

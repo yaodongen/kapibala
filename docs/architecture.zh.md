@@ -1,5 +1,7 @@
 # Kapibala 技术架构
 
+[English](./architecture.md) · **简体中文**
+
 本文是技术选型与工程结构的结论。存储设计见 [`storage.zh.md`](./storage.zh.md)，本文不重复，只讲代码怎么组织。
 
 ---
@@ -177,9 +179,10 @@ kapibala/
 │   ├── desktop/         # Electron 主进程 + React 渲染进程
 │   └── cli/             # kapi，纯 Node，bin 入口
 ├── docs/
-│   ├── storage.zh.md
-│   └── architecture.zh.md
-└── README.md
+│   ├── storage.md       ├── storage.zh.md
+│   └── architecture.md  └── architecture.zh.md
+├── README.md
+└── README.zh.md
 ```
 
 依赖方向是单向的，用 ESLint 的 `no-restricted-imports` 钉死：

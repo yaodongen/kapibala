@@ -1,6 +1,6 @@
 {
   "name": "@kapibala/adapters-node",
-  "version": "0.0.7",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {

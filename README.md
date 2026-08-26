@@ -1,71 +1,71 @@
 # Kapibala · 卡皮巴拉
 
-Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存储在你自己的磁盘上。
+**English** · [简体中文](./README.zh.md)
 
-**最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步
+Kapibala is a to-do app for macOS. All of your data lives on your own disk.
 
-## 1. 下载
+**It pairs best with iCloud Drive.** Put the folder in iCloud (or Dropbox, or any sync service) and your Macs stay in sync automatically.
 
-到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
+## 1. Download
 
+Grab the matching `.dmg` from [Releases](https://github.com/yaodongen/kapibala/releases/latest), open it, and drag Kapibala into your Applications folder.
 
-| 你的 Mac         | 下载                     |
+| Your Mac | Download |
 | -------------- | ---------------------- |
-| Apple 芯片（M 系列） | `Kapibala-*-arm64.dmg` |
-| Intel 芯片       | `Kapibala-*-x64.dmg`   |
+| Apple silicon (M series) | `Kapibala-*-arm64.dmg` |
+| Intel | `Kapibala-*-x64.dmg` |
 
-
-> 这个包还没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
+> The build is not notarized by Apple yet, so Gatekeeper blocks the first launch. Two ways around it:
 >
-> - 双击一次（会被拒），然后到 **系统设置 → 隐私与安全性**，在下方点「仍要打开」
-> - 或者终端里一句：`xattr -dr com.apple.quarantine /Applications/Kapibala.app`
+> - Double-click once (it will be refused), then open **System Settings → Privacy & Security** and click "Open Anyway" near the bottom
+> - Or run one line in a terminal: `xattr -dr com.apple.quarantine /Applications/Kapibala.app`
 
-## 2. 快速开始
+## 2. Getting started
 
-1. 打开 Kapibala，选一个文件夹作为你的「库」，任务都存在这里。
-2. 想多台 Mac 同步，就选一个 iCloud Drive 里的目录，比如 `~/Library/Mobile Documents/com~apple~CloudDocs/Kapibala`。在另一台 Mac 上打开同一个目录即可。
-3. 开始记任务。
+1. Launch Kapibala and pick a folder to be your **vault**. Every task lives in there.
+2. To sync across Macs, pick a folder inside iCloud Drive — for example `~/Library/Mobile Documents/com~apple~CloudDocs/Kapibala`. On your other Mac, open the same folder.
+3. Start writing tasks.
 
-也支持多个库：工作一个、生活一个，互不干扰，随时切换。
+Multiple vaults work too: one for work, one for life, switched at any time and never mixed.
 
-想备份？`cp -r` 或者 Time Machine。想不用了？删掉 App，数据还是你的。
+Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the data is still yours.
 
-## 3. 功能
+## 3. Features
 
-**任务**
+**Tasks**
 
-- 备注
-- 开始时间
-- 多个提醒
-- **周期任务**：支持「每周一」这类固定周期，也支持「完成后 N 天再来」
-- 一键完成、一键删除（进垃圾桶，不是真删）
+- Notes, with Markdown
+- Start date and time
+- Multiple reminders
+- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / yearly, and also "N days after I finish it"
+- One click to complete, one click to delete (into the trash, not gone for good)
+- **Search** across titles and notes; space-separated words all have to match
 
-**视图**
+**Views**
 
-- 今天
-- **最近 7 天**：按日期 + 周几分组，最近的排在最前，逾期任务单独置顶一组
-- 全部任务
-- 已完成
-- 垃圾桶
+- Today
+- **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
+- All tasks
+- Completed
+- Trash
 
-## 4. 隐私
+## 4. Privacy
 
-- **零网络请求。** 应用本身不联网。没有账号、没有遥测、没有崩溃上报、没有「匿名使用统计」。
-- **同步由你选的服务商完成。** 数据是否上云、上哪家的云，是你的决定。不用 iCloud 就是纯本地应用。
-- **格式可读。** 存储是纯文本，不是二进制黑盒，你随时能看清应用写了什么。
+- **Zero network requests.** The app itself never goes online. No account, no telemetry, no crash reports, no "anonymous usage statistics".
+- **Syncing is done by the provider you choose.** Whether your data goes to a cloud, and whose cloud, is your call. Skip iCloud and it is a purely local app.
+- **A readable format.** Storage is plain text, not an opaque binary blob. You can see exactly what the app wrote, whenever you want.
 
-## 5. 常见问题
+## 5. FAQ
 
-**为什么不做 iOS / Android 版？**
-只做 Mac，范围收敛，做好一件事。
+**Why no iOS / Android version?**
+Mac only. A narrow scope, done properly.
 
-**必须用 iCloud 吗？**
-不。库目录放在任何地方都行——`~/Documents`、外置硬盘、Dropbox、坚果云。不放同步盘就是纯本地应用。
+**Do I have to use iCloud?**
+No. The vault folder can live anywhere — `~/Documents`, an external drive, Dropbox, any sync service. Keep it off a synced drive and the app is purely local.
 
-**「卡皮巴拉」？**
-水豚。世界上最不焦虑的动物。待办清单应该让你更像它一点。
+**"Kapibala"?**
+Capybara. The least anxious animal on earth. A to-do list should make you a little more like one.
 
-## 6. 许可
+## 6. License
 
-MIT，见 [LICENSE](./LICENSE)。
-
+MIT, see [LICENSE](./LICENSE).

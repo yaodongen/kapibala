@@ -1,5 +1,7 @@
 # Kapibala 存储设计
 
+[English](./storage.md) · **简体中文**
+
 > 存储层是这个项目唯一改起来代价极高的部分：schema 定了，用户数据就在那了。界面随时能重写，存储层不能。
 > 本文是实现依据，不是概念草稿——每一条都要能落到代码和测试上。
 
@@ -450,11 +452,21 @@ type Reminder = { id: string, offsetMin?: number, at?: number }
 
 ```ts
 type RepeatRule = {
-  rrule: string                          // RFC 5545 RRULE，如 "FREQ=WEEKLY;BYDAY=MO"
-  tz: string                             // "Asia/Shanghai"。RRULE 没有时区就是错的
-  mode: 'fixed' | 'afterCompletion'      // 固定周期 / 完成后 N 天再来
+  rrule?: string                         // RFC 5545 RRULE 子集，如 "FREQ=MONTHLY;BYDAY=2TU"
+  freq?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'   // 0.0.x 写下的形状，只读不写
+  interval?: number
+  mode?: 'fixed' | 'afterCompletion'     // 固定周期 / 完成后 N 天再来
+  tz?: string                            // "Asia/Shanghai"。RRULE 没有时区就是错的
 }
 ```
+
+RRULE 支持的子集：`FREQ`（DAILY/WEEKLY/MONTHLY/YEARLY）、`INTERVAL`、`BYDAY`
+（可带序号，`2TU` = 第二个周二，`-1FR` = 最后一个周五）、`BYMONTHDAY`（`-1` = 月末）、
+`BYMONTH`、`UNTIL`。**不支持 `COUNT`**——它要记"已经生成过几次"，和"完成时才生成下一个"
+的模型冲突。不支持的部分在解析时忽略而不是猜，因为猜会算出错的日期。
+
+`freq` / `interval` 这对旧字段是 0.0.x 写下的，读的时候转成 RRULE，新数据只写 `rrule`。
+这正是"只增字段、不改语义"那条规则的实际用法：用户库里已经有的数据一行都不用迁移。
 
 问题：完成一个周期任务时要生成下一个实例。如果两台 Mac 都完成了同一次，就会生成**两个**下一个实例。
 
