@@ -1,8 +1,8 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
-import { existsSync, readdirSync, watch, type FSWatcher } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Store, isNotDownloaded, readRegistry, type Task } from '@kapibala/core'
+import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
 import type { TaskDraftIpc, VaultState } from '@kapibala/ipc'
 import { log, logPath, readLog } from './log.ts'
@@ -16,7 +16,22 @@ let store: Store | null = null
 let win: BrowserWindow | null = null
 let watcher: FSWatcher | null = null
 
+/**
+ * 界面状态（比如上次选中哪条任务）单独存一份，不塞进 vaults.json ——
+ * 那个文件是和 CLI 共享的库注册表，别混进界面的东西。
+ */
+const uiFile = () => `${env.userDataDir}/ui.json`
+type UiState = { lastTask?: Record<string, string> }
+function readUi(): UiState {
+  try { return JSON.parse(readFileSync(uiFile(), 'utf8')) as UiState } catch { return {} }
+}
+function writeUi(ui: UiState) {
+  try { writeFileSync(uiFile(), JSON.stringify(ui, null, 2) + '\n') } catch (e) { log('error', '写界面状态失败', e) }
+}
+
 const stateOf = (s: Store): VaultState => ({
+  id: s.vault.entry.id,
+  lastTask: readUi().lastTask?.[s.vault.entry.id],
   name: s.vault.entry.name,
   path: s.vault.entry.path,
   deviceLabel: s.vault.device.label,
@@ -26,7 +41,7 @@ const stateOf = (s: Store): VaultState => ({
 })
 
 function push() {
-  if (store && win && !win.isDestroyed()) win.webContents.send('tasks:changed', store.tasks())
+  if (win && !win.isDestroyed()) win.webContents.send('tasks:changed', store?.tasks() ?? [])
 }
 
 /**
@@ -133,6 +148,29 @@ const handle = (ch: string, fn: (...a: never[]) => unknown) =>
     catch (e) { log('error', `IPC ${ch} 失败`, e); throw e }
   })
 
+handle('vault:forget', async (id: string) => {
+  const reg = await readRegistry(env)
+  const gone = reg.vaults.find(v => v.id === id)
+  if (!gone) throw new Error('这个库已经不在列表里了')
+  reg.vaults = reg.vaults.filter(v => v.id !== id)
+  const wasCurrent = store?.vault.entry.id === id
+  reg.lastVaultId = wasCurrent ? reg.vaults[0]?.id : reg.lastVaultId
+  await writeRegistry(env, reg)
+  // 只动注册表。目录和里面的任务一个字节都不碰
+  log('info', '从列表移出库（不删目录）', { path: gone.path, wasCurrent })
+
+  if (!wasCurrent) return store ? stateOf(store) : null
+  watcher?.close(); watcher = null
+  store = null
+  const next = reg.vaults[0]
+  if (next) {
+    try { const s = await openVault(next.path); push(); return stateOf(s) }
+    catch (e) { log('error', '移出后打开下一个库失败', e) }
+  }
+  push()                                  // 没有库了，让界面回到引导页
+  return null
+})
+
 handle('task:menu', (id: string) => {
   const t = store?.task(id)
   if (!t || !win) return
@@ -143,6 +181,8 @@ handle('task:menu', (id: string) => {
         { label: '彻底删除', click: () => void write(s => s.purge(id)) },
       ]
     : [
+        { label: '备注', click: () => win?.webContents.send('task:show', id) },
+        { type: 'separator' },
         { label: t.completedAt ? '标记为未完成' : '完成',
           click: () => void write(s => (t.completedAt ? s.uncomplete(id) : s.complete(id).then(() => undefined))) },
         { type: 'separator' },
@@ -169,6 +209,12 @@ handle('vault:open', async (id: string) => {
   const s = await openVault(entry.path)   // openVault 内部会把它记为 lastVaultId
   push()
   return stateOf(s)
+})
+
+handle('ui:lastTask', (taskId: string) => {
+  if (!store) return
+  const ui = readUi()
+  writeUi({ ...ui, lastTask: { ...ui.lastTask, [store.vault.entry.id]: taskId } })
 })
 
 handle('log:read', () => ({ text: readLog(), path: logPath() }))
@@ -208,7 +254,8 @@ async function selfTest(w: BrowserWindow) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 940, height: 640, minWidth: 640, minHeight: 420,
+    // 备注栏常驻，默认宽度把它算进去了：216 侧栏 + 554 列表 + 340 备注
+    width: 1110, height: 640, minWidth: 820, minHeight: 420,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#f7eee0',
     webPreferences: {

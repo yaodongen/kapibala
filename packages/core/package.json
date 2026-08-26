@@ -1,11 +1,12 @@
 {
   "name": "@kapibala/core",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./markdown": "./src/markdown.ts"
   },
   "license": "MIT"
 }

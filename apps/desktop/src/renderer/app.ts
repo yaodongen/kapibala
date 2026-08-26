@@ -3,6 +3,8 @@
  * 看不到 op，也看不到 HLC。
  */
 import type { Task } from '@kapibala/core'
+// 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
+import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import type { Api, VaultState } from '@kapibala/ipc'
 
 declare global { interface Window { kapi: Api } }
@@ -39,6 +41,28 @@ type ViewId = typeof VIEWS[number]['id']
 let tasks: Task[] = []
 let vault: VaultState | null = null
 let view: ViewId = 'today'
+/** 右侧详情栏选中的任务；备注是否处于编辑态 */
+let selected: string | null = null
+let editing = false
+
+/**
+ * 上次选中的任务由主进程存在 userData 里（不用 localStorage：Chromium 的刷盘时机
+ * 不可控，退出得快就丢了）。这是本机的界面状态，不进库目录、不跟着 iCloud 同步。
+ */
+function remember(id: string) {
+  if (vault) vault = { ...vault, lastTask: id }
+  void kapi['ui:lastTask'](id)
+}
+const recall = (): string | null => vault?.lastTask ?? null
+
+/** 备注栏常驻，所以永远要有个选中项：优先上次选中的，否则当前视图的第一条 */
+function ensureSelection(visible: Task[]) {
+  if (selected && tasks.some(t => t.id === selected)) return
+  const last = recall()
+  const chosen = (last ? tasks.find(t => t.id === last) : undefined) ?? visible[0]
+  selected = chosen?.id ?? null
+  editing = false        // 自动选中不该直接进编辑，否则一启动就抢走输入焦点
+}
 
 const alive = () => tasks.filter(t => !t.deleted)
 const undone = () => alive().filter(t => !t.completedAt)
@@ -100,12 +124,16 @@ function render() {
   if (vault?.health.badLines) notes.push(`<div class="banner">跳过了 ${vault.health.badLines} 行坏数据</div>`)
   $('banner').innerHTML = notes.join('')
 
-  const groups = group(pick(view), view)
+  const visible = pick(view)
+  ensureSelection(visible)
+  const groups = group(visible, view)
   if (!groups.reduce((n, g) => n + g.items.length, 0)) {
     $('list').innerHTML = `<div class="empty"><span class="big">🌿</span>${
       view === 'trash' ? '垃圾桶是空的' : view === 'done' ? '还没有完成的任务' : '没有任务，去泡个澡'}</div>`
+    renderDetail()
     return
   }
+  renderDetail()
   $('list').innerHTML = groups.map(g => `<section class="group">${
     g.label ? `<div class="ghead ${g.overdue ? 'overdue' : ''}">${g.label}${
       g.wd ? `<span class="wd">${g.wd}</span>` : ''}</div>` : ''
@@ -115,22 +143,74 @@ function render() {
 function row(t: Task): string {
   const time = t.startAt !== undefined && !t.isAllDay ? hhmm(t.startAt) : ''
   const rep = t.repeat ? ({ DAILY: '每天', WEEKLY: '每周', MONTHLY: '每月' })[t.repeat.freq] : ''
+  const first = t.notes?.trim() ? notePreview(t.notes, 46) : ''
   const acts = t.deleted
     ? `<button data-act="task:restore" data-id="${t.id}">恢复</button>`
     : `<button class="del" data-act="task:trash" data-id="${t.id}">删除</button>`
-  return `<div class="task ${t.completedAt ? 'is-done' : ''}">
+  return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''}"
+               data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
     <div class="body"><div class="title">${esc(t.title)}</div>${
       time || rep ? `<div class="meta">${time ? `<span>${time}</span>` : ''}${
-        rep ? `<span class="tag">↻ ${rep}</span>` : ''}</div>` : ''}</div>
-    <div class="acts">${acts}</div></div>`
+        rep ? `<span class="tag">↻ ${rep}</span>` : ''}</div>` : ''}${
+      first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>
+    <div class="acts">${acts}</div>
+  </div>`
+}
+
+/** 右侧详情栏。点任务打开，展示标题、时间和备注 */
+function renderDetail() {
+  const t = selected ? tasks.find(x => x.id === selected) : undefined
+  if (!t) { selected = null; editing = false }
+  if (!t) {                                   // 备注栏常驻，没选中就显示提示
+    $('dtitle').textContent = ''
+    $('dmeta').innerHTML = ''
+    $('dbody').innerHTML = '<div class="dempty">选中一个任务，在这里写备注。<br>支持 Markdown。</div>'
+    return
+  }
+
+  $('dtitle').textContent = t.title
+  const d = t.startAt !== undefined ? new Date(t.startAt) : null
+  const iso = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
+  const bits: string[] = []
+  if (t.repeat) bits.push(`↻ ${({ DAILY: '每天', WEEKLY: '每周', MONTHLY: '每月' })[t.repeat.freq]}`)
+  if (t.completedAt) bits.push('已完成')
+  if (t.deleted) bits.push('在垃圾桶里')
+  // 日期和时间可以直接改；清空日期就是"未安排"
+  $('dmeta').innerHTML =
+    `<input type="date" id="ddate" value="${iso}">` +
+    `<input type="time" id="dtime" value="${d && !t.isAllDay ? hhmm(t.startAt!) : ''}">` +
+    (d ? `<button class="dclear" id="dclear" title="改成未安排">清除</button>` : '') +
+    bits.map(b => `<span>${esc(b)}</span>`).join('')
+
+  $('dbody').innerHTML = editing
+    ? `<textarea class="noteedit" data-noteedit="${t.id}"
+         placeholder="支持 Markdown：**粗体** *斜体* \`代码\` - 列表 [链接](https://…)">${esc(t.notes ?? '')}</textarea>
+       <div class="notehint">⌘↩ 保存 · esc 取消</div>`
+    : `<div class="md" data-noteview="${t.id}">${renderMarkdown(t.notes ?? '')}</div>`
 }
 
 document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
   if (nav) { view = nav.dataset['view'] as ViewId; render(); return }
+  if (target.id === 'dclear' && selected) {
+    void kapi['task:setField'](selected, 'startAt', null); return
+  }
+  const noteview = target.closest<HTMLElement>('[data-noteview]')
+  if (noteview && !(target instanceof HTMLAnchorElement)) {
+    editing = true; render(); focusEditor(); return
+  }
+  const taskRow = target.closest<HTMLElement>('[data-task]')
+  if (taskRow && !target.closest('[data-act]')) {
+    const id = taskRow.dataset['task']!
+    selected = id
+    remember(id)
+    // 还没写过备注就直接进编辑，省一次点击
+    editing = !tasks.find(t => t.id === id)?.notes?.trim()
+    render(); focusEditor(); return
+  }
   const btn = target.closest<HTMLElement>('[data-act]')
   if (!btn) return
   const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete' | 'task:trash' | 'task:restore'
@@ -143,6 +223,39 @@ document.addEventListener('contextmenu', (e) => {
   if (!box) return
   e.preventDefault()
   void kapi['task:menu'](box.dataset['id']!)
+})
+
+function focusEditor() {
+  const el = document.querySelector<HTMLTextAreaElement>('[data-noteedit]')
+  if (!el) return
+  el.focus()
+  el.setSelectionRange(el.value.length, el.value.length)
+}
+
+async function saveNote(el: HTMLTextAreaElement) {
+  // render() 把 textarea 从 DOM 摘掉时会再触发一次 focusout，
+  // 不打标记的话"取消"会被当成"保存"写进日志
+  if (el.dataset['closed']) return
+  el.dataset['closed'] = '1'
+  const id = el.dataset['noteedit']!
+  const next = el.value
+  const prev = tasks.find(t => t.id === id)?.notes ?? ''
+  editing = false
+  if (next !== prev) await kapi['task:setField'](id, 'notes', next)   // 不变就不写 op
+  else render()
+}
+
+document.addEventListener('keydown', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLTextAreaElement>('[data-noteedit]')
+  if (!el) return
+  if (e.key === 'Escape') { e.preventDefault(); el.dataset['closed'] = '1'; editing = false; render() }
+  // ⌘↩ 保存。单独的回车留给换行，备注是多行的
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveNote(el) }
+})
+// 点到别处也保存，别让用户白写一段
+document.addEventListener('focusout', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLTextAreaElement>('[data-noteedit]')
+  if (el) void saveNote(el)
 })
 
 const ti = $('newTitle') as HTMLInputElement
@@ -168,6 +281,8 @@ async function openVaultList() {
       <span><span class="nm">${esc(v.name)}</span>
         <span class="pt">${esc(v.path.replace(/^\/Users\/[^/]+/, '~'))}</span></span>
       ${v.available ? '' : '<span class="miss">找不到</span>'}
+      <span class="forget" data-forget="${v.id}" role="button"
+            aria-label="从列表关闭" title="从列表关闭，不删除文件夹">✕</span>
     </button>`).join('')
   ;($('vaultsheet') as HTMLElement).hidden = false
 }
@@ -186,6 +301,19 @@ async function switchVault(id: string) {
   }
 }
 
+async function forgetVault(id: string) {
+  const state = await kapi['vault:forget'](id)
+  vault = state
+  tasks = state ? await kapi['task:list']() : []
+  if (!state) {                       // 一个库都不剩了，回到引导页
+    ;($('vaultsheet') as HTMLElement).hidden = true
+    showWelcome(true)
+    return
+  }
+  await openVaultList()               // 重新拉一次列表，标记也跟着更新
+  render()
+}
+
 $('vault').addEventListener('click', () => void openVaultList())
 $('vaultadd').addEventListener('click', async () => {
   const v = await kapi['vault:pick']()
@@ -197,7 +325,23 @@ $('vaultadd').addEventListener('click', async () => {
   render()
 })
 
-/* ── 错误日志 ── */
+/** 详情栏里改日期/时间。空日期 = 未安排；没填时间 = 全天 */
+async function saveWhen() {
+  if (!selected) return
+  const date = ($('ddate') as HTMLInputElement).value
+  const time = ($('dtime') as HTMLInputElement).value
+  if (!date) { await kapi['task:setField'](selected, 'startAt', null); return }
+  const at = +new Date(`${date}T${time || '00:00'}`)
+  await kapi['task:setField'](selected, 'startAt', at)
+  await kapi['task:setField'](selected, 'isAllDay', !time)
+}
+
+document.addEventListener('change', (e) => {
+  const el = e.target as HTMLElement
+  if (el.id === 'ddate' || el.id === 'dtime') void saveWhen()
+})
+
+/* ── 日志 ── */
 async function openLog() {
   const { text, path } = await kapi['log:read']()
   $('logtext').textContent = text
@@ -207,6 +351,8 @@ async function openLog() {
 document.addEventListener('click', (e) => {
   const t = e.target as HTMLElement
   if (t.closest('[data-log]')) { void openLog(); return }
+  const forget = t.closest<HTMLElement>('[data-forget]')
+  if (forget) { void forgetVault(forget.dataset['forget']!); return }   // 别顺带触发切换
   const vrow = t.closest<HTMLElement>('[data-vault]')
   if (vrow) { void switchVault(vrow.dataset['vault']!); return }
   if (t.id === 'logclose' || t.id === 'logsheet') ($('logsheet') as HTMLElement).hidden = true
@@ -228,6 +374,12 @@ window.addEventListener('unhandledrejection', (e) => {
 })
 
 kapi.onTasksChanged((t) => { tasks = t; render() })
+kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
+  selected = id
+  remember(id)
+  editing = !tasks.find(t => t.id === id)?.notes?.trim()
+  render(); focusEditor()
+})
 
 /** 没有库时先讲清楚为什么要选文件夹，再由用户点按钮触发系统对话框 */
 function showWelcome(on: boolean) {

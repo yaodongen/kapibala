@@ -27,7 +27,7 @@ body{
   color:var(--text); background:var(--bg); height:100vh; overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
-.app{display:grid; grid-template-columns:216px 1fr; height:100vh}
+.app{display:grid; grid-template-columns:216px 1fr 340px; height:100vh}   /* 备注栏常驻 */
 
 /* ── 侧边栏 ── */
 .sidebar{
@@ -52,9 +52,9 @@ body{
 header{padding:20px 28px 12px}
 h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .sub{color:var(--dim); font-size:12.5px; margin-top:2px}
-.add{padding:4px 28px 12px; display:flex; gap:8px}
+.add{padding:4px 28px 12px; display:flex; gap:8px; flex-wrap:wrap}   /* 详情栏挤窄时要能换行 */
 .add input[type=text]{
-  flex:1; padding:8px 11px; border:1px solid var(--border); border-radius:7px;
+  flex:1 1 140px; min-width:0; padding:8px 11px; border:1px solid var(--border); border-radius:7px;
   background:var(--bg); color:var(--text); font:inherit; font-size:13.5px;
 }
 .add input[type=text]:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
@@ -106,6 +106,52 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 }
 .acts button:hover{background:var(--border); color:var(--text)}
 .acts button.del:hover{color:var(--danger)}
+
+/* ── 右侧详情栏 ── */
+.detailpane{ border-left:1px solid var(--border); display:flex; flex-direction:column;
+             overflow:hidden; background:var(--bg); padding-top:34px; position:relative }
+.dhead{ display:flex; align-items:flex-start; gap:8px; padding:8px 16px 10px }
+.dhead .t{ font-size:14.5px; font-weight:600; line-height:1.4; word-break:break-word;
+           -webkit-user-select:text; user-select:text }
+.dmeta{ padding:0 16px 10px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;
+        font-size:11.5px; color:var(--dim) }
+.dmeta input{ font:inherit; font-size:11.5px; padding:3px 6px; border:1px solid var(--border);
+              border-radius:6px; background:var(--bg); color:var(--text) }
+.dmeta input:hover{ border-color:var(--dim) }
+.dmeta .dclear{ font:inherit; font-size:11.5px; padding:3px 7px; border:none; border-radius:6px;
+                background:none; color:var(--dim); cursor:default }
+.dmeta .dclear:hover{ background:var(--row-hover); color:var(--danger) }
+.dlabel{ padding:0 16px 6px; font-size:11px; color:var(--dim); letter-spacing:.02em }
+.dbody{ padding:0 16px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column }
+.dempty{ padding:0 16px; color:var(--dim); font-size:12.5px; line-height:1.6 }
+.task.sel{ background:var(--row-hover) }
+
+/* ── 备注 ── */
+.md{ font-size:13px; line-height:1.65; color:var(--text); flex:1;
+     -webkit-user-select:text; user-select:text; cursor:text }
+.md:empty::before{ content:'写点备注…（支持 Markdown）'; color:var(--dim) }
+.md > :first-child{ margin-top:0 }
+.md > :last-child{ margin-bottom:0 }
+.md p{ margin:.35em 0 }
+.md h3, .md h4, .md h5, .md h6{ font-size:12.5px; font-weight:600; margin:.7em 0 .3em }
+.md ul, .md ol{ margin:.35em 0; padding-left:1.3em }
+.md li{ margin:.15em 0 }
+.md code{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+          background:var(--row-hover); padding:1px 4px; border-radius:4px }
+.md pre{ background:var(--row-hover); padding:8px 10px; border-radius:7px; overflow-x:auto; margin:.45em 0 }
+.md pre code{ background:none; padding:0 }
+.md blockquote{ margin:.4em 0; padding-left:9px; border-left:2px solid var(--border); color:var(--dim) }
+.md hr{ border:none; border-top:1px solid var(--border); margin:.7em 0 }
+.md a{ color:var(--accent) }
+.md del{ color:var(--dim) }
+.noteedit{ width:100%; flex:1; resize:none; padding:0; margin:0; border:none; outline:none;
+           background:none; color:var(--text); font:inherit; font-size:13px; line-height:1.65;
+           -webkit-user-select:text; user-select:text }
+.notehint{ position:absolute; right:16px; bottom:6px; font-size:11px; color:var(--dim);
+            background:var(--bg); padding-left:8px; pointer-events:none }
+.notefirst{ font-size:11.5px; color:var(--dim); margin-top:2px; overflow:hidden;
+            text-overflow:ellipsis; white-space:nowrap }
+.acts button.on{ color:var(--accent) }
 .empty{padding:56px 0; text-align:center; color:var(--dim); font-size:13px}
 .empty .big{font-size:34px; display:block; margin-bottom:10px; opacity:.5}
 
@@ -129,6 +175,14 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .vrow .pt{ display:block; font-size:11px; color:var(--dim); margin-top:2px; word-break:break-all }
 .vrow.off .nm, .vrow.off .pt{ color:var(--dim) }
 .vrow .miss{ margin-left:auto; flex:none; font-size:11px; color:var(--danger) }
+/* 圆形的关闭按钮。行本身是 button，所以这里只能用 span，不能嵌套 button */
+.vrow .forget{ margin-left:auto; flex:none; width:19px; height:19px; margin-top:1px;
+               display:flex; align-items:center; justify-content:center; border-radius:50%;
+               font-size:12px; line-height:1; color:var(--dim); opacity:.45; cursor:default }
+.vrow:hover .forget{ opacity:1 }
+.vrow .forget:hover{ background:var(--danger); color:#fff }
+.vrow .miss + .forget{ margin-left:8px }
+.sheet-foot .note{ font-size:11px; color:var(--dim); align-self:center; margin-left:4px }
 .banner{ margin:0 28px 8px; padding:7px 10px; border-radius:7px; font-size:12px;
          background:var(--accent-soft); color:var(--accent) }
 .banner.warn{ background:#fdeceb; color:var(--danger) }
@@ -202,7 +256,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </ul>
     <button id="pick">选择文件夹…</button>
     <p class="hint">空文件夹会新建一个库；已经有 Kapibala 库的文件夹会直接打开。</p>
-    <p class="hint"><button class="logbtn" data-log>出问题了？查看错误日志</button></p>
+    <p class="hint"><button class="logbtn" data-log>出问题了？查看日志</button></p>
   </div>
 </div>
 
@@ -224,7 +278,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </div>
     <nav id="nav"></nav>
     <button class="vault" id="vault" title="切换库"></button>
-    <div style="padding:0 8px 6px"><button class="logbtn" data-log>查看错误日志</button></div>
+    <div style="padding:0 8px 6px"><button class="logbtn" data-log>查看日志</button></div>
   </aside>
   <main class="main">
     <header>
@@ -244,6 +298,15 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </div>
     <div class="list" id="list"></div>
   </main>
+
+  <aside class="detailpane" id="detail">
+    <div class="dhead">
+      <div class="t" id="dtitle"></div>
+    </div>
+    <div class="dmeta" id="dmeta"></div>
+    <div class="dlabel">备注</div>
+    <div class="dbody" id="dbody"></div>
+  </aside>
 </div>
 <div class="sheet" id="vaultsheet" hidden>
   <div class="sheet-box">
@@ -251,6 +314,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     <div class="vlist" id="vlist"></div>
     <div class="sheet-foot">
       <button class="primary" id="vaultadd">打开其他文件夹…</button>
+      <span class="note">关闭只是把它从这个列表里去掉，文件夹和里面的任务不会被删除</span>
       <button class="right" id="vaultclose">关闭</button>
     </div>
   </div>
@@ -259,7 +323,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 <div class="sheet" id="logsheet" hidden>
   <div class="sheet-box">
     <div class="sheet-head">
-      <b>错误日志</b>
+      <b>日志</b>
       <span class="path" id="logpath"></span>
     </div>
     <pre id="logtext"></pre>

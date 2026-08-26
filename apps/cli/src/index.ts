@@ -20,6 +20,7 @@ const HELP = `${C.b}kapi${C.off} —— 卡皮巴拉命令行
     kapi vault open <目录>       打开已有的库并设为当前库
     kapi vault list              列出所有库
     kapi vault use <名字|路径>    切换当前库
+    kapi vault forget <名字|路径> 从列表移出（不删除目录）
 
   ${C.b}任务${C.off}
     kapi add <标题> [--at 时间] [--repeat daily|weekly|monthly] [--after]
@@ -121,6 +122,17 @@ async function main() {
       if (!reg.vaults.length) { console.log(`${C.dim}还没有库${C.off}`); return }
       for (const v of reg.vaults)
         console.log(`${v.id === reg.lastVaultId ? `${C.green}●${C.off}` : ' '} ${C.b}${v.name}${C.off}  ${C.dim}${v.path}${C.off}`)
+      return
+    }
+    if (sub === 'forget') {
+      const q = rest[1] ?? ''
+      const reg = await readRegistry(env)
+      const v = reg.vaults.find(x => x.name === q || x.path === resolve(q) || x.id.endsWith(q.toUpperCase()))
+      if (!v) throw new Error(`找不到库：${q}`)
+      reg.vaults = reg.vaults.filter(x => x.id !== v.id)
+      if (reg.lastVaultId === v.id) reg.lastVaultId = reg.vaults[0]?.id
+      await writeRegistry(env, reg)
+      console.log(`已从列表移出 ${C.b}${v.name}${C.off}${C.dim}（目录还在：${v.path}）${C.off}`)
       return
     }
     if (sub === 'use') {
