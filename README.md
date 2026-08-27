@@ -21,6 +21,8 @@ Grab the matching `.dmg` from [Releases](https://github.com/yaodongen/kapibala/r
 >
 > - Double-click once (it will be refused), then open **System Settings → Privacy & Security** and click "Open Anyway" near the bottom
 > - Or run one line in a terminal: `xattr -dr com.apple.quarantine /Applications/Kapibala.app`
+>
+> Notarizing requires an Apple Developer Program membership at $99/year. This project is free and has not paid that bill, so the extra click is on you.
 
 ## 2. Getting started
 
@@ -54,6 +56,7 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 **Interface**
 
 - English and Chinese. It follows your Mac's language, and you can switch any time from the bottom-left corner
+- Closing the window just tucks it away and the app keeps running. To really quit, right-click the Dock icon and choose Quit
 
 ## 4. Privacy
 

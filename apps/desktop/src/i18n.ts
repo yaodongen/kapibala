@@ -120,6 +120,7 @@ const ZH = {
   menuDelete: '删除',
   menuRestore: '恢复',
   menuPurge: '彻底删除',
+  dockOpen: '打开主界面',
   errNoVault: '还没有打开任何库',
   errVaultGone: '这个库已经不在列表里了',
 }
@@ -214,6 +215,7 @@ const EN: typeof ZH = {
   menuDelete: 'Delete',
   menuRestore: 'Restore',
   menuPurge: 'Delete for good',
+  dockOpen: 'Open Kapibala',
   errNoVault: 'No vault is open yet',
   errVaultGone: 'That vault is no longer on the list',
 }

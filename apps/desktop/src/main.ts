@@ -16,6 +16,8 @@ const env = nodeEnv()
 let store: Store | null = null
 let win: BrowserWindow | null = null
 let watcher: FSWatcher | null = null
+/** 关窗口只是收起来，真退出得走 Dock 图标右键的"退出"或 ⌘Q。这个标记区分两者 */
+let quitting = false
 
 /**
  * 界面状态（比如上次选中哪条任务）单独存一份，不塞进 vaults.json ——
@@ -250,6 +252,7 @@ handle('ui:lang', () => lang())
 handle('ui:setLang', (next: Lang) => {
   if (!isLang(next)) throw new Error(`不认识的语言：${String(next)}`)
   writeUi({ ...readUi(), lang: next })
+  refreshDockMenu()                       // Dock 菜单是启动时建好的，语言变了要重建
   log('info', '切换界面语言', { lang: next })
   return next
 })
@@ -304,7 +307,31 @@ function createWindow() {
   })
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
   win.loadFile(join(__dirname, 'renderer/index.html'))
+  // 点红灯只是把窗口收起来，进程继续跑 —— 下次点 Dock 图标立刻回来，不用重新读库。
+  // 真退出的两条路（Dock 右键"退出"、⌘Q）都会先发 before-quit，把 quitting 立起来
+  win.on('close', (e) => {
+    if (quitting) return
+    e.preventDefault()
+    win?.hide()
+    log('info', '主窗口收起，应用继续在后台运行')
+  })
   return win
+}
+
+/** 图标被点或菜单选了"打开主界面"：窗口还在就直接显示，别重新建一个 */
+function showWindow() {
+  if (win && !win.isDestroyed()) { win.show(); win.focus() }
+  else createWindow()
+}
+
+/**
+ * Dock 图标右键的菜单。macOS 会在我们这几项下面自动接上"选项 / 显示全部窗口 / 退出"，
+ * 所以这里不重复放"退出" —— 系统那一项走的是标准退出流程。
+ */
+function refreshDockMenu() {
+  app.dock?.setMenu(Menu.buildFromTemplate([
+    { label: S().dockOpen, click: () => showWindow() },
+  ]))
 }
 
 app.whenReady().then(async () => {
@@ -317,7 +344,17 @@ app.whenReady().then(async () => {
     // 开发期自检钩子。打包后一律失效，不留在成品里
     if (!app.isPackaged) await selfTest(w)
   })
-  app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow() })
+  refreshDockMenu()
+  // 点 Dock 图标：收起来的窗口要能回来，不是只在"一个窗口都没有"时才建
+  app.on('activate', () => showWindow())
 })
 
-app.on('window-all-closed', () => { watcher?.close(); app.quit() })
+// 订阅了这个事件就等于告诉 Electron"窗口关完别自动退" —— 空函数是故意的。
+// 窗口其实也不会真的关（上面 preventDefault 了），这里只是把默认行为挡住
+app.on('window-all-closed', () => { /* 后台继续跑，见 createWindow 里的 close */ })
+
+app.on('before-quit', () => {
+  quitting = true
+  watcher?.close()
+  log('info', '退出')
+})
