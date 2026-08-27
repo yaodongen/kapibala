@@ -74,6 +74,14 @@ want "垃圾桶里能看到" "$(A trash | grep -c 买菜)" "1"
 A restore "$MAI" >/dev/null
 want "恢复回来了" "$(A ls --all | grep -c 买菜)" "1"
 
+echo "→ 清空垃圾桶：标记也要同步到别的机器"
+A add "扔掉甲" >/dev/null; A add "扔掉乙" >/dev/null
+for T in 扔掉甲 扔掉乙; do A rm "$(A ls --all | grep $T | grep -oE '[0-9a-z]{6}$')" >/dev/null; done
+want "两条都在垃圾桶里" "$(B trash | grep -cE '扔掉甲|扔掉乙')" "2"
+A purge --all >/dev/null
+want "A 的垃圾桶空了" "$(A trash | grep -cE '扔掉甲|扔掉乙')" "0"
+want "B 那边也不再出现" "$( { B ls --all; B trash; } | grep -cE '扔掉甲|扔掉乙' || true)" "0"
+
 echo "→ 没有任何机器写别人的目录"
 CROSS=0
 for d in "$E/vault"/devices/*/; do

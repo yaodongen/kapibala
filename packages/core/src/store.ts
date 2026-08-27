@@ -133,6 +133,18 @@ export class Store {
   purge(id: string)      { return this.write([{ id, f: '_purgedAt', val: this.env.clock.now() }]) }
 
   /**
+   * 清空垃圾桶：所有标记写在同一批里，不是 N 次追加。
+   * tasks() 本身已经把之前清掉的过滤掉了，所以不会反复给同一条写标记。
+   */
+  async purgeAll(): Promise<number> {
+    const ids = this.tasks().filter(t => t.deleted).map(t => t.id)
+    if (!ids.length) return 0
+    const at = this.env.clock.now()
+    await this.write(ids.map(id => ({ id, f: '_purgedAt', val: at })))
+    return ids.length
+  }
+
+  /**
    * 压实：先切新段，再把已冻结的段压成 snapshot。只压自己的目录，段文件永不删除。
    * 见 storage.zh.md §6.3
    */

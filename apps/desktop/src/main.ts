@@ -272,6 +272,26 @@ handle('task:uncomplete', (id: string) => write(s => s.uncomplete(id)))
 handle('task:trash', (id: string) => write(s => s.trash(id)))
 handle('task:restore', (id: string) => write(s => s.restore(id)))
 
+/** 清空垃圾桶。不可撤销，所以先弹一次原生确认；默认按钮是"取消" */
+handle('task:purgeAll', async () => {
+  const n = need().tasks().filter(t => t.deleted).length
+  if (!n) return 0
+  const L = S()
+  const opts: Electron.MessageBoxOptions = {
+    type: 'warning',
+    message: L.purgeAllAsk(n),
+    detail: L.purgeAllDetail,
+    buttons: [L.purgeAllOk, L.cancel],
+    defaultId: 1, cancelId: 1,
+  }
+  const { response } = win && !win.isDestroyed()
+    ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
+  if (response !== 0) { log('info', '清空垃圾桶：用户取消了', { count: n }); return 0 }
+  const done = await write(s => s.purgeAll())
+  log('info', '清空垃圾桶', { count: done })
+  return done
+})
+
 /**
  * 开发期自检：
  *   KAPI_EVAL="await window.kapi['task:create']({title:'x'})"  在渲染进程里跑一段

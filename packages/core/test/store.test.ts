@@ -273,6 +273,38 @@ describe('彻底删除', () => {
     expect(ops.some(o => o.f === '_purgedAt')).toBe(true)
   })
 
+  it('清空垃圾桶：垃圾桶里的都清掉，没删的一条不动', async () => {
+    const { s } = await setup()
+    const a1 = await s.add({ title: '扔了一' })
+    const a2 = await s.add({ title: '扔了二' })
+    const keep = await s.add({ title: '还在用' })
+    const doneTask = await s.add({ title: '已完成的' })
+    await s.complete(doneTask)
+    await s.trash(a1); await s.trash(a2)
+
+    expect(await s.purgeAll()).toBe(2)
+    const left = s.tasks().map(t => t.title).sort()
+    expect(left).toEqual(['已完成的', '还在用'])
+    expect(s.tasks().some(t => t.deleted)).toBe(false)
+    // 已经清空了，再清一次没有东西可清 —— 不能给同一条反复写标记
+    expect(await s.purgeAll()).toBe(0)
+    expect(keep).toBeTruthy()
+  })
+
+  it('清空垃圾桶只写一批 op，不是一条一次追加', async () => {
+    const { fs, s } = await setup()
+    for (const t of ['一', '二', '三']) await s.trash(await s.add({ title: t }))
+    const before = [...fs.files.entries()].find(([k]) => k.endsWith('000001.jsonl'))![1].length
+    await s.purgeAll()
+    const seg = [...fs.files.entries()].find(([k]) => k.endsWith('000001.jsonl'))![1]
+    const { ops } = parseSegment(seg)
+    const marks = ops.filter(o => o.f === '_purgedAt')
+    expect(marks).toHaveLength(3)
+    // 同一批写入 = 同一毫秒的时间戳，且都在 before 之后追加上去的
+    expect(new Set(marks.map(o => o.val)).size).toBe(1)
+    expect(seg.length).toBeGreaterThan(before)
+  })
+
   it('重开之后也不会再冒出来', async () => {
     const { fs, a, s } = await setup()
     const id = await s.add({ title: '别再回来' })

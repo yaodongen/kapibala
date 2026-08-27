@@ -9,8 +9,9 @@ ui/icon.iconset/
 *.dmg
 
 # ── 隐私 ────────────────────────────────────────────────
-# 个人的任务清单
+# 个人的任务清单，和自己看的备忘（brew 集成计划之类）
 todo.md
+todo-*.md
 
 # 签名与公证的凭据（APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
 .env

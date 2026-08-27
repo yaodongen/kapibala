@@ -24,12 +24,19 @@ const DAY = 86400000
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
 const today = () => dayStart(Date.now())
 const weekday = (ts: number) => S.weekdays[new Date(ts).getDay()]!
-/** 中文界面用 24 小时制；英文界面跟英文的习惯，交给 Intl 去排 */
-const hhmm = (ts: number) => {
+/**
+ * <input type=time> 的 value 只认 24 小时制的 HH:mm。给人看的格式（英文是
+ * "7:30 PM"）塞进去会被浏览器判成非法值、整个框变空 —— 于是详情栏看不到时间，
+ * 一改日期还会被当成"没填时间"存成全天。两种格式必须分开。
+ */
+const hhmm24 = (ts: number) => {
   const d = new Date(ts)
-  if (lang === 'en') return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+/** 列表里给人看的时间：中文 24 小时制，英文跟英文的习惯 */
+const hhmm = (ts: number) => lang === 'en'
+  ? new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  : hhmm24(ts)
 const dayLabel = (ts: number) => {
   const t = today()
   if (ts === t) return S.dayToday
@@ -38,10 +45,11 @@ const dayLabel = (ts: number) => {
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
-/** 不做清单，所以是 5 项。名字和副标题都从字典取，键名和视图 id 对齐 */
+/** 不做清单，所以就这 6 项。名字和副标题都从字典取，键名和视图 id 对齐 */
 const VIEWS = [
   { id: 'today', ico: '☀', sub: () => S.todaySub(dayLabel(today()), weekday(today())) },
   { id: 'next7', ico: '▤', sub: () => S.next7Sub },
+  { id: 'next30', ico: '▦', sub: () => S.next30Sub },
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
@@ -89,6 +97,7 @@ function pick(v: ViewId): Task[] {
   const t0 = today()
   if (v === 'today') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY)
   if (v === 'next7') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 7)
+  if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
   if (v === 'done') return alive().filter(t => t.completedAt).sort((a, b) => b.completedAt! - a.completedAt!)
   return tasks.filter(t => t.deleted)
@@ -173,7 +182,7 @@ function repeatSelect(id: string, at: number, current?: Task['repeat']): string 
 function render() {
   $('nav').innerHTML = VIEWS.map((v, i) => {
     const n = pick(v.id).length
-    return (i === 3 ? '<div class="sep"></div>' : '') +
+    return (i === 4 ? '<div class="sep"></div>' : '') +
       `<button class="nav ${v.id === view ? 'on' : ''}" data-view="${v.id}">` +
       `<span class="ico">${v.ico}</span>${esc(S[v.id])}${n ? `<span class="n">${n}</span>` : ''}</button>`
   }).join('')
@@ -183,6 +192,10 @@ function render() {
   $('vtitle').textContent = results ? S.searchTitle : S[v.id]
   $('vsub').textContent = results ? S.searchSub(query.trim(), results.length) : v.sub()
   ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
+  // 清空按钮：只在垃圾桶里、且真有东西可清的时候才出现
+  const purge = $('purgeall') as HTMLButtonElement
+  purge.textContent = S.purgeAll
+  purge.hidden = view !== 'trash' || !!results || pick('trash').length === 0
 
   // 默认只显示库名。路径和设备信息挪到 hover 的提示里，不必常驻占三行
   $('vault').innerHTML = vault ? `<b>${esc(vault.name)}</b><span class="swap">⇅</span>` : ''
@@ -231,9 +244,9 @@ function row(t: Task): string {
     <div class="body">${titleEditing === t.id
       ? `<input class="titleedit" data-titleedit="${t.id}" value="${esc(t.title)}">`
       : `<div class="title">${esc(t.title)}</div>`}${
-      rep ? `<div class="meta"><span class="tag">↻ ${rep}</span></div>` : ''}${
       first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>${
-    time ? `<div class="when">${time}</div>` : ''}
+    time ? `<div class="when">${time}</div>` : ''}${
+    rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}
   </div>`
 }
 
@@ -255,11 +268,16 @@ function renderDetail() {
   // 重复规则做成下拉，已创建的任务也能改
   if (t.completedAt) bits.push(S.isDone)
   if (t.deleted) bits.push(S.isTrashed)
-  // 日期和时间可以直接改；清空日期就是"未安排"
+  // 日期和时间可以直接改；清空日期就是"未安排"。
+  // 叉号只在真有具体时间时出现，贴在时间框右边 —— 它只去掉时间，日期留着
+  const timed = d !== null && !t.isAllDay
   $('dmeta').innerHTML =
     `<input type="date" id="ddate" value="${iso}">` +
-    `<input type="time" id="dtime" value="${d && !t.isAllDay ? hhmm(t.startAt!) : ''}">` +
-    (d ? `<button class="dclear" id="dclear" title="${esc(S.clearTip)}">${esc(S.clear)}</button>` : '') +
+    `<span class="dtimebox">` +
+      `<input type="time" id="dtime" value="${timed ? hhmm24(t.startAt!) : ''}">` +
+      (timed ? `<button class="dclear" id="dclear" title="${esc(S.clearTime)}"
+                        aria-label="${esc(S.clearTime)}">✕</button>` : '') +
+    `</span>` +
     repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
@@ -275,7 +293,9 @@ document.addEventListener('click', async (e) => {
   const nav = target.closest<HTMLElement>('[data-view]')
   if (nav) { view = nav.dataset['view'] as ViewId; render(); return }
   if (target.id === 'dclear' && selected) {
-    void kapi['task:setField'](selected, 'startAt', null); return
+    // 走和"手动把时间框清空"完全同一条路：日期不动，任务变成全天
+    ;($('dtime') as HTMLInputElement).value = ''
+    void saveWhen(); return
   }
   const noteview = target.closest<HTMLElement>('[data-noteview]')
   if (noteview && !(target instanceof HTMLAnchorElement)) {
@@ -515,6 +535,9 @@ $('logcopy').addEventListener('click', async () => {
   b.textContent = S.logCopied; setTimeout(() => { b.textContent = old }, 1200)
 })
 $('logreveal').addEventListener('click', () => void kapi['log:reveal']())
+
+// 清空垃圾桶。确认对话框在主进程弹，这里只等结果（改动会由 tasks:changed 推回来）
+$('purgeall').addEventListener('click', () => void kapi['task:purgeAll']())
 
 /**
  * 语言按钮上写的是"要切过去的那个语言"，一眼就知道点了会变成什么。

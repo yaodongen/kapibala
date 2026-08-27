@@ -32,6 +32,7 @@ const HELP = `${C.b}kapi${C.off} —— 卡皮巴拉命令行
     kapi trash                   看垃圾桶
     kapi restore <id>            从垃圾桶恢复
     kapi purge <id>              彻底删除（列表里不再出现；日志里仍留有痕迹）
+    kapi purge --all             清空垃圾桶
     kapi search <关键词>         搜索标题和备注（空格分隔多个词按全部命中）
     kapi doctor                  库和同步状态
 
@@ -203,6 +204,11 @@ async function main() {
       return
     }
     case 'purge': {
+      if (F['all']) {                       // 清空垃圾桶，和界面上那个按钮同一条路
+        const n = await withLock(vaultId, () => s.purgeAll())
+        console.log(`${C.dim}已清空垃圾桶：${n} 个任务（列表里不再出现，但日志里仍留有痕迹 —— 存储层永不物理删除）${C.off}`)
+        return
+      }
       const t = resolveId(s, rest[0] ?? '')
       await withLock(vaultId, () => s.purge(t.id))
       console.log(`${C.dim}已彻底删除：${t.title}（列表里不再出现，但日志里仍留有痕迹 —— 存储层永不物理删除）${C.off}`)

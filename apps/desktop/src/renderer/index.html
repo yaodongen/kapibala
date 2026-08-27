@@ -55,6 +55,11 @@ header{padding:20px 28px 12px}
          color:var(--text); -webkit-appearance:none }
 #search:focus{ outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent }
 h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
+.vhead{display:flex; align-items:flex-start; gap:12px}
+.vheadtext{flex:1; min-width:0}
+.ghost{ font:inherit; font-size:12.5px; padding:5px 11px; border-radius:7px; flex:none;
+        border:1px solid var(--border); background:var(--bg); color:var(--dim); cursor:default }
+.ghost:hover{ border-color:var(--danger); color:var(--danger) }
 .sub{color:var(--dim); font-size:12.5px; margin-top:2px}
 .add{padding:4px 28px 12px; display:flex; gap:8px; flex-wrap:wrap}   /* 详情栏挤窄时要能换行 */
 .add input[type=text]{
@@ -104,7 +109,6 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
             outline:none; background:none; color:var(--text);
             -webkit-user-select:text; user-select:text }
 .task.is-done .title{color:var(--dim); text-decoration:line-through}
-.meta{display:flex; gap:8px; margin-top:1px; font-size:11.5px; color:var(--dim)}
 /* 时间贴在整行末尾，跟标题同一行 */
 .when{ flex:none; margin-left:8px; margin-top:1px; font-size:11.5px; color:var(--dim);
        font-variant-numeric:tabular-nums; white-space:nowrap }
@@ -113,6 +117,8 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   border-radius:4px; background:var(--accent-soft); color:var(--accent);
   font-size:11px; font-weight:500;
 }
+/* 重复标签贴在整行最右边，和时间一起构成右侧那一列 */
+.tag.rep{ flex:none; margin-left:8px; margin-top:1px; white-space:nowrap }
 
 /* ── 右侧详情栏 ── */
 .detailpane{ border-left:1px solid var(--border); display:flex; flex-direction:column;
@@ -129,9 +135,12 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .dmeta input{ font:inherit; font-size:11.5px; padding:3px 6px; border:1px solid var(--border);
               border-radius:6px; background:var(--bg); color:var(--text) }
 .dmeta input:hover{ border-color:var(--dim) }
-.dmeta .dclear{ font:inherit; font-size:11.5px; padding:3px 7px; border:none; border-radius:6px;
-                background:none; color:var(--dim); cursor:default }
-.dmeta .dclear:hover{ background:var(--row-hover); color:var(--danger) }
+/* 时间框和它的叉号是一体的：叉号只在有具体时间时才存在 */
+.dmeta .dtimebox{ display:inline-flex; align-items:center; gap:1px }
+.dmeta .dclear{ font:inherit; font-size:10px; line-height:1; width:18px; height:18px; padding:0;
+                display:flex; align-items:center; justify-content:center; border:none;
+                border-radius:50%; background:none; color:var(--dim); opacity:.5; cursor:default }
+.dmeta .dclear:hover{ opacity:1; background:var(--danger); color:#fff }
 .dlabel{ padding:0 16px 6px; font-size:11px; color:var(--dim); letter-spacing:.02em }
 .dbody{ padding:0 16px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column }
 .dempty{ padding:0 16px; color:var(--dim); font-size:12.5px; line-height:1.6 }
@@ -300,8 +309,14 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   </aside>
   <main class="main">
     <header>
-      <h1 id="vtitle"></h1>
-      <div class="sub" id="vsub"></div>
+      <div class="vhead">
+        <div class="vheadtext">
+          <h1 id="vtitle"></h1>
+          <div class="sub" id="vsub"></div>
+        </div>
+        <!-- 只在垃圾桶且里面有东西时出现 -->
+        <button class="ghost" id="purgeall" hidden></button>
+      </div>
     </header>
     <div id="banner"></div>
     <div class="add" id="addbar">

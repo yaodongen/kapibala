@@ -44,6 +44,8 @@ export type Commands = {
   'task:uncomplete': (id: string) => void
   'task:trash': (id: string) => void
   'task:restore': (id: string) => void
+  /** 清空垃圾桶。确认对话框在主进程弹（原生的），用户取消就返回 0 */
+  'task:purgeAll': () => number
   /** 右键菜单。用系统原生菜单，不自己画 */
   'task:menu': (id: string) => void
   /** 记住选中的任务。属于本机的界面状态，写在 userData 里，不进库目录 */
@@ -67,7 +69,7 @@ export type Events = {
 
 export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
-  'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:menu',
+  'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 

@@ -42,13 +42,14 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 - Start date and time
 - Multiple reminders
 - **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / yearly, and also "N days after I finish it"
-- One click to complete, one click to delete (into the trash, not gone for good)
+- One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
 - **Search** across titles and notes; space-separated words all have to match
 
 **Views**
 
 - Today
 - **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
+- Next 30 days: same grouping, for the month ahead
 - All tasks
 - Completed
 - Trash
