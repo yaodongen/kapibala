@@ -288,6 +288,23 @@ function renderDetail() {
     : `<div class="md" data-noteview="${t.id}">${renderMarkdown(t.notes ?? '')}</div>`
 }
 
+/**
+ * 圆圈的完成/取消完成在 mousedown 就执行，不等 click。
+ *
+ * 因为 mousedown 会把焦点从就地编辑的输入框里挪走 → focusout → 保存 → render()，
+ * 而 render() 重建整个列表，被按下的那个圆圈在 mouseup 之前就已经从 DOM 里消失了，
+ * click 事件因此根本不会落到它身上 —— 表现就是"第一下没反应，得点第二下"。
+ * 已经在 mousedown 里做过的事，随后的 click 要跳过，否则会连着切换两次。
+ */
+let actedOnMousedown = false
+document.addEventListener('mousedown', (e) => {
+  actedOnMousedown = false
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')
+  if (!btn) return
+  void kapi[btn.dataset['act'] as 'task:complete'](btn.dataset['id']!)
+  actedOnMousedown = true
+})
+
 document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
@@ -322,6 +339,7 @@ document.addEventListener('click', async (e) => {
   }
   const btn = target.closest<HTMLElement>('[data-act]')
   if (!btn) return
+  if (actedOnMousedown) { actedOnMousedown = false; return }   // mousedown 已经做了
   const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete' | 'task:trash' | 'task:restore'
   await kapi[act](btn.dataset['id']!)
 })

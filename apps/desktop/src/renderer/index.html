@@ -93,13 +93,18 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 }
 .task:hover{background:var(--row-hover)}
 .box{
-  flex:none; width:16px; height:16px; margin-top:1px; border-radius:50%;
+  flex:none; width:17px; height:17px; margin-top:1px; border-radius:50%;
   border:1.5px solid var(--dim); background:none; cursor:default; position:relative;
 }
-.box:hover{border-color:var(--accent)}
+/* 看着是 17px，能点的范围往外再扩 5px —— 一行只有一个圆圈，不怕误触 */
+.box::before{ content:""; position:absolute; inset:-5px }
+/* 悬浮时要一眼看出"这里能点"：描边变色 + 填色 + 往外一圈光晕 */
+.box:hover{ border-color:var(--accent); background:var(--accent-soft);
+            box-shadow:0 0 0 4px var(--accent-soft) }
 .box.done{background:var(--accent); border-color:var(--accent)}
+.box.done:hover{ background:var(--accent); box-shadow:0 0 0 4px var(--accent-soft) }
 .box.done::after{
-  content:""; position:absolute; left:4.5px; top:2px; width:4px; height:8px;
+  content:""; position:absolute; left:5px; top:2.5px; width:4.25px; height:8.5px;
   border:solid #fff; border-width:0 1.5px 1.5px 0; transform:rotate(40deg);
 }
 .body{flex:1; min-width:0}
