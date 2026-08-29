@@ -75,6 +75,15 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
    Wednesday"），能把整条添加栏顶到换行。给个上限，让它自己截断 */
 .add select{ max-width:170px }
 .dmeta select{ max-width:100% }
+/* 「每 [17] 天」：跟在重复下拉后面，只有选了"自定义天数…"才出现 */
+.customdays{ display:inline-flex; align-items:center; gap:4px; color:var(--dim); white-space:nowrap }
+.customdays input{ width:54px; font:inherit; padding:3px 6px; border:1px solid var(--border);
+                   border-radius:6px; background:var(--bg); color:var(--text) }
+.customdays input:focus{ outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent }
+.add .customdays{ font-size:12.5px }
+.add .customdays input{ padding:7px 8px; font-size:12.5px }
+.dmeta .customdays{ font-size:11.5px }
+.dmeta .customdays input{ font-size:11.5px }
 .list{flex:1; overflow-y:auto; padding:0 28px 40px}
 
 /* ── 分组 ── */
@@ -92,6 +101,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   border-radius:7px; margin:0 -8px;
 }
 .task:hover{background:var(--row-hover)}
+/* 勾完先留一秒再消失：前半段维持原样（看清勾上了），后半段淡出 */
+.task.leaving{ animation:taskleave 1s ease-in forwards }   /* 淡出期间仍可点，点一下就退回未完成 */
+@keyframes taskleave{ 0%,45%{ opacity:1 } 100%{ opacity:0 } }
+@media (prefers-reduced-motion:reduce){ .task.leaving{ animation:none; opacity:.5 } }
 .box{
   flex:none; width:17px; height:17px; margin-top:1px; border-radius:50%;
   border:1.5px solid var(--dim); background:none; cursor:default; position:relative;
@@ -329,6 +342,8 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
       <input type="date" id="newDate">
       <!-- 选项由 syncNewRepeat() 按所选日期生成（"每月第二个周二"离开日期就没法写死） -->
       <select id="newRepeat"></select>
+      <!-- 选了"自定义天数…"才有内容 -->
+      <span id="newcustom"></span>
     </div>
     <div class="list" id="list"></div>
   </main>

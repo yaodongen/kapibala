@@ -5,7 +5,7 @@
 import type { Task } from '@kapibala/core'
 // 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
-import { describeRepeat, presetsFor } from '@kapibala/core/rrule'
+import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 import { matchContext, searchTasks } from '@kapibala/core/search'
 import type { Api, VaultState } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
@@ -64,6 +64,8 @@ let selected: string | null = null
 let editing = false
 let query = ''            // 搜索词，非空时列表切成搜索结果
 let titleEditing: string | null = null   // 列表里正在就地改标题的那条
+/** 选了"自定义天数…"之后，在哪个下拉旁边展开输入框 */
+let customFor: 'detail' | 'new' | null = null
 /**
  * boot() 拿到库状态之前不许画。主进程在 did-finish-load 时就推了一次任务，
  * 那时 vault 还是 null，"上次选中的任务"读不出来，会选错成列表第一条 ——
@@ -90,8 +92,19 @@ function ensureSelection(visible: Task[]) {
   editing = false        // 自动选中不该直接进编辑，否则一启动就抢走输入焦点
 }
 
+/**
+ * 刚勾完的那条先留一秒再消失：一是看得清"确实勾上了"，二是手滑点错还来得及
+ * 再点一下退回去。留在这个表里的任务，视图筛选时当作"还没变"处理。
+ */
+const LINGER = 1000
+const leaving = new Map<string, ReturnType<typeof setTimeout>>()
+function linger(id: string) {
+  clearTimeout(leaving.get(id))
+  leaving.set(id, setTimeout(() => { leaving.delete(id); render() }, LINGER))
+}
+
 const alive = () => tasks.filter(t => !t.deleted)
-const undone = () => alive().filter(t => !t.completedAt)
+const undone = () => alive().filter(t => !t.completedAt || leaving.has(t.id))
 
 function pick(v: ViewId): Task[] {
   const t0 = today()
@@ -99,7 +112,9 @@ function pick(v: ViewId): Task[] {
   if (v === 'next7') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 7)
   if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
-  if (v === 'done') return alive().filter(t => t.completedAt).sort((a, b) => b.completedAt! - a.completedAt!)
+  // 已完成视图里取消勾选也一样，先留一秒
+  if (v === 'done') return alive().filter(t => t.completedAt || leaving.has(t.id))
+    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
   return tasks.filter(t => t.deleted)
 }
 
@@ -167,19 +182,60 @@ function setLang(next: Lang) {
  * 重复规则的下拉。选项由日期推出来 —— "每月第二个周二""每年 8 月 26 日"
  * 这些描述离开具体日期就没法生成。
  */
+/** 选中它就展开一个输入框，让用户自己填天数 —— "每 17 天"这种预设列不完 */
+const CUSTOM = '__custom__'
+const dailyEvery = (n: number) => `FREQ=DAILY;INTERVAL=${n}`
+/** 已经是"每 N 天"的规则，把 N 取出来当输入框的默认值 */
+function everyDays(rrule: string | undefined): number | null {
+  const m = /^FREQ=DAILY;INTERVAL=(\d+)$/.exec(rrule ?? '')
+  return m ? Number(m[1]) : null
+}
+
+/** 「每 [17] 天」这一小段。中英文里数字的位置不一样，所以前后缀都从字典取 */
+function customDays(id: string, value: number | null): string {
+  return `<span class="customdays">${esc(S.customEvery)}` +
+    `<input type="number" min="1" max="999" id="${id}" title="${esc(S.customDaysTip)}"` +
+    ` placeholder="17" value="${value ?? ''}">${esc(S.customDaysUnit)}</span>`
+}
+
 function repeatSelect(id: string, at: number, current?: Task['repeat']): string {
   const cur = current?.rrule ?? (current ? describeRepeat(current, lang) : '')
   const opts = presetsFor(at, lang)
   const known = opts.some(o => o.rrule === cur)
   return `<select id="${id}">` +
     `<option value="">${esc(S.noRepeat)}</option>` +
-    // 旧数据（0.0.x 的 {freq} 形状）或手写的规则：原样列出来，别把它悄悄改掉
+    // 旧数据（0.0.x 的 {freq} 形状）、手写的规则、自己填的天数：原样列出来，别把它悄悄改掉
     (current && !known ? `<option value="${esc(cur)}" selected>${esc(describeRepeat(current, lang))}</option>` : '') +
     opts.map(o => `<option value="${esc(o.rrule)}"${o.rrule === cur ? ' selected' : ''}>${esc(o.label)}</option>`).join('') +
+    `<option value="${CUSTOM}">${esc(S.repeatCustom)}</option>` +
     `</select>`
 }
 
+/**
+ * 列表一重建，正在就地编辑的那个标题框就会被换掉 —— 打了一半的字、光标位置全没。
+ * 重建前先记下来，重建后补回去。（触发重建的可能是自己的保存、别的 Mac 同步过来的
+ * 改动、勾完那一秒的定时器……不能指望"重建不会发生"）
+ */
+function keepTitleEdit(): (() => void) {
+  const el = document.querySelector<HTMLInputElement>('[data-titleedit]')
+  if (!el || el.dataset['titleedit'] !== titleEditing) return () => {}
+  const value = el.value
+  const at = el.selectionStart ?? value.length
+  const focused = document.activeElement === el
+  // 这一次消失是重画造成的，不是用户离开输入框 —— 打上标记，别让 focusout
+  // 把它当成"编辑结束"（那会顺手把 titleEditing 清掉，编辑框当场没）。
+  // 内容和光标都会原样搬到新的输入框里，什么都不会丢
+  el.dataset['closed'] = '1'
+  return () => {
+    const next = document.querySelector<HTMLInputElement>(`[data-titleedit="${titleEditing}"]`)
+    if (!next) return
+    next.value = value
+    if (focused) { next.focus(); next.setSelectionRange(at, at) }
+  }
+}
+
 function render() {
+  const restoreTitleEdit = keepTitleEdit()
   $('nav').innerHTML = VIEWS.map((v, i) => {
     const n = pick(v.id).length
     return (i === 4 ? '<div class="sep"></div>' : '') +
@@ -220,6 +276,7 @@ function render() {
       results ? S.emptySearch
       : view === 'trash' ? S.emptyTrash : view === 'done' ? S.emptyDone : S.emptyList)}</div>`
     renderDetail()
+    restoreTitleEdit()
     return
   }
   renderDetail()
@@ -227,18 +284,25 @@ function render() {
     g.label ? `<div class="ghead ${g.overdue ? 'overdue' : ''}">${g.label}${
       g.wd ? `<span class="wd">${g.wd}</span>` : ''}</div>` : ''
   }${g.items.map(row).join('')}</section>`).join('')
+  restoreTitleEdit()
 }
 
 function row(t: Task): string {
-  // 有具体时间就带上周几："周三 18:00"。列表里不分组的视图（全部/搜索）尤其需要
-  const time = t.startAt !== undefined && !t.isAllDay
-    ? `${weekday(t.startAt)} ${hhmm(t.startAt)}` : ''
+  // 行末那一小段时间：
+  //   今天以后的，日期已经写在分组标题上了，所以只补"周三 18:00"
+  //   逾期的，分组标题只有"已逾期"三个字 —— 不带上原来的日期就不知道拖了多久
+  const time = (() => {
+    if (t.startAt === undefined) return ''
+    const clock = t.isAllDay ? '' : hhmm(t.startAt)
+    if (dayStart(t.startAt) < today()) return [dayLabel(t.startAt), clock].filter(Boolean).join(' ')
+    return clock ? `${weekday(t.startAt)} ${clock}` : ''
+  })()
   const rep = t.repeat ? describeRepeat(t.repeat, lang) : ''
   const first = query.trim()
     ? (t.notes?.trim() ? matchContext(t, query, 46) : '')
     : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
-  return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''}"
-               data-task="${t.id}">
+  return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
+               leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
     <div class="body">${titleEditing === t.id
@@ -261,7 +325,16 @@ function renderDetail() {
     return
   }
 
-  ;($('dtitle') as HTMLInputElement).value = t.title
+  // 正在打字的那个框不能重建：innerHTML 一换，焦点和光标位置就全没了。
+  // 边打边存必须配这个，否则每存一次就把用户从输入框里踢出来
+  const focused = document.activeElement as HTMLElement | null
+  const typingTitle = focused?.id === 'dtitle'
+  // 加上 editing：saveNote 把 editing 关掉之后，这里必须重建，
+  // 否则光标还留在那个框里、编辑器就收不起来（按 esc/⌘↩ 看着像没反应）
+  const typingNote = editing && !!focused?.closest?.('[data-noteedit]')
+  const typingCustom = !!focused?.closest?.('.customdays')
+
+  if (!typingTitle) ($('dtitle') as HTMLInputElement).value = t.title
   const d = t.startAt !== undefined ? new Date(t.startAt) : null
   const iso = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
   const bits: string[] = []
@@ -271,7 +344,7 @@ function renderDetail() {
   // 日期和时间可以直接改；清空日期就是"未安排"。
   // 叉号只在真有具体时间时出现，贴在时间框右边 —— 它只去掉时间，日期留着
   const timed = d !== null && !t.isAllDay
-  $('dmeta').innerHTML =
+  if (!typingCustom) $('dmeta').innerHTML =
     `<input type="date" id="ddate" value="${iso}">` +
     `<span class="dtimebox">` +
       `<input type="time" id="dtime" value="${timed ? hhmm24(t.startAt!) : ''}">` +
@@ -279,9 +352,10 @@ function renderDetail() {
                         aria-label="${esc(S.clearTime)}">✕</button>` : '') +
     `</span>` +
     repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
+    (customFor === 'detail' ? customDays('dcustom', everyDays(t.repeat?.rrule)) : '') +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
-  $('dbody').innerHTML = editing
+  if (!typingNote) $('dbody').innerHTML = editing
     ? `<textarea class="noteedit" data-noteedit="${t.id}"
          placeholder="${esc(S.notesEditPlaceholder)}">${esc(t.notes ?? '')}</textarea>
        <div class="notehint">${esc(S.notesHint)}</div>`
@@ -297,15 +371,61 @@ function renderDetail() {
  * 已经在 mousedown 里做过的事，随后的 click 要跳过，否则会连着切换两次。
  */
 let actedOnMousedown = false
+/**
+ * 点标题进入就地编辑。光标落在点中的那个字旁边 —— 想改中间一个字，
+ * 不用先跳到末尾再按一路左键。
+ */
+function beginTitleEdit(id: string, x: number, y: number) {
+  const caret = caretOffsetAt(x, y)
+  selected = id
+  remember(id)
+  titleEditing = id
+  editing = false        // 改标题时别把焦点让给备注编辑框
+  render()
+  const el = document.querySelector<HTMLInputElement>('[data-titleedit]')
+  if (!el) return
+  const at = Math.min(caret ?? el.value.length, el.value.length)
+  el.focus()
+  el.setSelectionRange(at, at)
+}
+
 document.addEventListener('mousedown', (e) => {
   actedOnMousedown = false
-  const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')
-  if (!btn) return
-  void kapi[btn.dataset['act'] as 'task:complete'](btn.dataset['id']!)
+  const target = e.target as HTMLElement
+  const btn = target.closest<HTMLElement>('[data-act]')
+  if (btn) {
+    const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete'
+    const id = btn.dataset['id']!
+    if (act === 'task:complete' || act === 'task:uncomplete') linger(id)
+    void kapi[act](id)
+    actedOnMousedown = true
+    return
+  }
+  // 改标题同样要在 mousedown 做：mousedown 会把焦点从上一个输入框挪走，
+  // 那一次 focusout 保存会重建列表，click 就落不到这行标题上了（点了没反应）
+  const row = target.closest<HTMLElement>('[data-task]')
+  if (!row || !target.closest('.title')) return
+  // 拦下默认行为：否则浏览器会在 mousedown 之后把焦点移到"被点的那个元素"上，
+  // 而那个元素刚被 render() 换掉了 —— 焦点落到 body，输入框当场又被 focusout 关掉
+  e.preventDefault()
+  beginTitleEdit(row.dataset['task']!, e.clientX, e.clientY)
   actedOnMousedown = true
 })
 
+/**
+ * 点击坐标 → 文本里的第几个字。标题和就地编辑的输入框字体、起点都一样，
+ * 所以按"字符下标"换算，比按像素靠谱。拿不到就返回 null，调用方退回光标放末尾。
+ */
+function caretOffsetAt(x: number, y: number): number | null {
+  const doc = document as Document & { caretRangeFromPoint?(x: number, y: number): Range | null }
+  const r = doc.caretRangeFromPoint?.(x, y)
+  if (!r || r.startContainer.nodeType !== Node.TEXT_NODE) return null
+  return r.startOffset
+}
+
 document.addEventListener('click', async (e) => {
+  // mousedown 里已经处理完的（勾选、进入改标题），click 不要再来一遍
+  if (actedOnMousedown) { actedOnMousedown = false; return }
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
   if (nav) { view = nav.dataset['view'] as ViewId; render(); return }
@@ -323,15 +443,7 @@ document.addEventListener('click', async (e) => {
     const id = taskRow.dataset['task']!
     selected = id
     remember(id)
-    if (target.closest('.title')) {
-      // 点标题就地改标题，此时别把焦点让给备注编辑框
-      titleEditing = id
-      editing = false
-      render()
-      const el = document.querySelector<HTMLInputElement>('[data-titleedit]')
-      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) }
-      return
-    }
+    if (target.closest('.title')) { beginTitleEdit(id, e.clientX, e.clientY); return }
     titleEditing = null
     // 还没写过备注就直接进编辑，省一次点击
     editing = !tasks.find(t => t.id === id)?.notes?.trim()
@@ -339,8 +451,8 @@ document.addEventListener('click', async (e) => {
   }
   const btn = target.closest<HTMLElement>('[data-act]')
   if (!btn) return
-  if (actedOnMousedown) { actedOnMousedown = false; return }   // mousedown 已经做了
   const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete' | 'task:trash' | 'task:restore'
+  if (act === 'task:complete' || act === 'task:uncomplete') linger(btn.dataset['id']!)
   await kapi[act](btn.dataset['id']!)
 })
 
@@ -359,9 +471,9 @@ function focusEditor() {
   el.setSelectionRange(el.value.length, el.value.length)
 }
 
+/** 收起编辑器并落盘。没有"取消"这条路 —— 打过的字一律留下 */
 async function saveNote(el: HTMLTextAreaElement) {
-  // render() 把 textarea 从 DOM 摘掉时会再触发一次 focusout，
-  // 不打标记的话"取消"会被当成"保存"写进日志
+  // render() 把 textarea 从 DOM 摘掉时会再触发一次 focusout，标记一下别重复走
   if (el.dataset['closed']) return
   el.dataset['closed'] = '1'
   const id = el.dataset['noteedit']!
@@ -372,13 +484,37 @@ async function saveNote(el: HTMLTextAreaElement) {
   else render()
 }
 
+/** 边打字边存：编辑器不关、焦点不动。renderDetail 会避开正在打字的那个框 */
+async function autosaveNote(el: HTMLTextAreaElement) {
+  if (el.dataset['closed']) return
+  const id = el.dataset['noteedit']!
+  const prev = tasks.find(t => t.id === id)?.notes ?? ''
+  if (el.value === prev) return
+  await kapi['task:setField'](id, 'notes', el.value)
+}
+
 document.addEventListener('keydown', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLTextAreaElement>('[data-noteedit]')
   if (!el) return
-  if (e.key === 'Escape') { e.preventDefault(); el.dataset['closed'] = '1'; editing = false; render() }
-  // ⌘↩ 保存。单独的回车留给换行，备注是多行的
+  // esc 也是保存 —— 编辑器里没有"白打一段"这种结局
+  if (e.key === 'Escape') { e.preventDefault(); void saveNote(el) }
+  // ⌘↩ 保存并收起。单独的回车留给换行，备注是多行的
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveNote(el) }
 })
+
+/**
+ * 每 5 秒看一眼编辑中的内容变没变，变了就存一次。
+ *
+ * 不做"每敲一个字存一次"：每次写入都是日志里的一条 op，还要跨 iCloud 同步到别的
+ * Mac，按键存会把日志灌满。存的时候不重画正在打字的那个框（见 renderDetail），
+ * 所以光标不会跳。标题空着先不存 —— 那通常是"清空了准备重打"，不是想删掉标题。
+ */
+setInterval(() => {
+  const note = document.querySelector<HTMLTextAreaElement>('[data-noteedit]')
+  if (note) void autosaveNote(note)
+  const dt = $('dtitle') as HTMLInputElement
+  if (document.activeElement === dt && dt.value.trim()) void saveTitle()
+}, 5000)
 // 点到别处也保存，别让用户白写一段
 document.addEventListener('focusout', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLTextAreaElement>('[data-noteedit]')
@@ -389,10 +525,59 @@ document.addEventListener('focusout', (e) => {
 function syncNewRepeat() {
   const at = di.value ? +new Date(`${di.value}T00:00`) : today()
   const keep = ri.value
-  ri.innerHTML = `<option value="">${esc(S.noRepeat)}</option>` +
-    presetsFor(at, lang).map(o => `<option value="${o.rrule}">${esc(o.label)}</option>`).join('')
+  const presets = presetsFor(at, lang)
+  // 自己填的天数不在预设里，换日期重建选项时要原样带回来，否则会被悄悄清成"不重复"
+  const extra = keep && keep !== CUSTOM && !presets.some(o => o.rrule === keep)
+    ? `<option value="${esc(keep)}">${esc(describeRrule(keep, lang))}</option>` : ''
+  ri.innerHTML = `<option value="">${esc(S.noRepeat)}</option>` + extra +
+    presets.map(o => `<option value="${o.rrule}">${esc(o.label)}</option>`).join('') +
+    `<option value="${CUSTOM}">${esc(S.repeatCustom)}</option>`
   ri.value = keep && Array.from(ri.options).some(o => o.value === keep) ? keep : ''
 }
+
+/** 添加栏那个"每 [ ] 天"：null 表示收起来 */
+function renderNewCustom(value: number | null) {
+  $('newcustom').innerHTML = customFor === 'new' ? customDays('newcustom-input', value) : ''
+}
+
+function focusCustom(id: string) {
+  const el = document.getElementById(id === 'newcustom' ? 'newcustom-input' : id) as HTMLInputElement | null
+  el?.focus()
+}
+
+/**
+ * 自定义天数落地。回车或失焦时读一次：填了合法数字就写 FREQ=DAILY;INTERVAL=N，
+ * 没填就当作没选过，退回原来的规则（renderDetail / syncNewRepeat 会照原值重画）。
+ */
+function commitCustomDays(el: HTMLInputElement) {
+  const n = Math.floor(Number(el.value))
+  const ok = Number.isFinite(n) && n >= 1 && n <= 999
+  const where = customFor
+  customFor = null
+  if (where === 'detail') {
+    if (ok && selected) void kapi['task:setField'](selected, 'repeat', { rrule: dailyEvery(n) })
+    else renderDetail()
+    return
+  }
+  if (ok) {
+    const rrule = dailyEvery(n)
+    ri.value = ''                       // 先清掉"自定义…"，再把新选项塞进去选上
+    ri.innerHTML += `<option value="${esc(rrule)}">${esc(describeRrule(rrule, lang))}</option>`
+    ri.value = rrule
+  } else ri.value = ''
+  renderNewCustom(null)
+}
+
+document.addEventListener('keydown', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLInputElement>('.customdays input')
+  if (!el) return
+  if (e.key === 'Enter') { e.preventDefault(); commitCustomDays(el) }
+  if (e.key === 'Escape') { e.preventDefault(); el.value = ''; commitCustomDays(el) }
+})
+document.addEventListener('focusout', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLInputElement>('.customdays input')
+  if (el && customFor) commitCustomDays(el)
+})
 
 const ti = $('newTitle') as HTMLInputElement
 const di = $('newDate') as HTMLInputElement
@@ -478,11 +663,8 @@ $('dtitle').addEventListener('keydown', (e) => {
   const el = e.target as HTMLInputElement
   // 回车直接保存，不绕 blur —— 那条路依赖焦点状态，边界情况下会静默不保存
   if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); void saveTitle(); el.blur() }
-  if ((e as KeyboardEvent).key === 'Escape') {
-    const t = tasks.find(x => x.id === selected)
-    if (t) el.value = t.title
-    el.blur()
-  }
+  // esc 同样是保存后收起，不还原
+  if ((e as KeyboardEvent).key === 'Escape') { e.preventDefault(); void saveTitle(); el.blur() }
 })
 $('dtitle').addEventListener('blur', () => void saveTitle())
 
@@ -493,7 +675,9 @@ async function saveRowTitle(el: HTMLInputElement) {
   const id = el.dataset['titleedit']!
   const next = el.value.trim()
   const t = tasks.find(x => x.id === id)
-  titleEditing = null
+  // 只关掉自己这一条：直接点另一行的标题时，编辑权已经交给那一行了
+  // （这次 focusout 正是那次交接触发的），这里一刀切会把新开的编辑框也关掉
+  if (titleEditing === id) titleEditing = null
   if (!t || !next || next === t.title) { render(); return }
   await kapi['task:setField'](id, 'title', next)
 }
@@ -501,8 +685,8 @@ async function saveRowTitle(el: HTMLInputElement) {
 document.addEventListener('keydown', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLInputElement>('[data-titleedit]')
   if (!el) return
-  if (e.key === 'Enter') { e.preventDefault(); void saveRowTitle(el) }
-  if (e.key === 'Escape') { e.preventDefault(); el.dataset['closed'] = '1'; titleEditing = null; render() }
+  // 回车和 esc 都是保存 —— 详情栏那边没有"取消"，这里也不该有
+  if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); void saveRowTitle(el) }
 })
 document.addEventListener('focusout', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLInputElement>('[data-titleedit]')
@@ -525,7 +709,15 @@ document.addEventListener('change', (e) => {
   if (el.id === 'ddate' || el.id === 'dtime') void saveWhen()
   if (el.id === 'drepeat' && selected) {
     const v = (el as HTMLSelectElement).value
+    if (v === CUSTOM) { customFor = 'detail'; renderDetail(); focusCustom('dcustom'); return }
+    customFor = null
     void kapi['task:setField'](selected, 'repeat', v ? { rrule: v } : null)
+  }
+  if (el.id === 'newRepeat') {
+    const v = ri.value
+    if (v === CUSTOM) { customFor = 'new'; renderNewCustom(null); focusCustom('newcustom'); return }
+    customFor = null
+    renderNewCustom(null)
   }
   if (el.id === 'newDate') syncNewRepeat()      // 换了日期，预设跟着变
 })

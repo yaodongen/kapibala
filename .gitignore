@@ -13,6 +13,9 @@ ui/icon.iconset/
 todo.md
 todo-*.md
 
+# 给 Claude Code 看的本地开发备忘，只对这台机器有意义
+CLAUDE.local.md
+
 # 签名与公证的凭据（APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID）
 .env
 .env.*

@@ -51,6 +51,10 @@ const ZH = {
   // ── 列表 ──
   addPlaceholder: '添加任务，回车保存',
   noRepeat: '不重复',
+  repeatCustom: '自定义天数…',
+  customEvery: '每',
+  customDaysUnit: '天',
+  customDaysTip: '输入天数后回车，比如 17',
   overdue: '已逾期',
   unscheduled: '未安排',
   dayToday: '今天',
@@ -79,7 +83,7 @@ const ZH = {
   notesEmpty: '写点备注…（支持 Markdown）',
   notesNoSelection: '选中一个任务，在这里写备注。<br>支持 Markdown。',
   notesEditPlaceholder: '支持 Markdown：**粗体** *斜体* `代码` - 列表 [链接](https://…)',
-  notesHint: '⌘↩ 保存 · esc 取消',
+  notesHint: '自动保存 · ⌘↩ 收起',
 
   // ── 提示条 ──
   bannerReadOnly: '这个库的格式比当前版本新，已按只读打开',
@@ -159,6 +163,10 @@ const EN: typeof ZH = {
 
   addPlaceholder: 'Add a task, press ⏎',
   noRepeat: 'No repeat',
+  repeatCustom: 'Every N days…',
+  customEvery: 'Every',
+  customDaysUnit: 'days',
+  customDaysTip: 'Type a number of days and press return, e.g. 17',
   overdue: 'Overdue',
   unscheduled: 'Unscheduled',
   dayToday: 'Today',
@@ -185,7 +193,7 @@ const EN: typeof ZH = {
   notesEmpty: 'Write a note… (Markdown supported)',
   notesNoSelection: 'Select a task to write a note here.<br>Markdown supported.',
   notesEditPlaceholder: 'Markdown: **bold** *italic* `code` - list [link](https://…)',
-  notesHint: '⌘↩ save · esc cancel',
+  notesHint: 'Saved automatically · ⌘↩ to close',
 
   bannerReadOnly: 'This vault was written by a newer version, so it is open read-only',
   bannerForked: 'This device folder belongs to another Mac (the vault was copied or migrated), so a new device identity is in use',

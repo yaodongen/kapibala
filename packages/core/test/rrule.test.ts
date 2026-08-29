@@ -92,6 +92,13 @@ describe('下一次是哪天', () => {
       .toEqual(['Mon Sep 07 2026', 'Mon Sep 21 2026', 'Mon Oct 05 2026'])
   })
 
+  it('自己填的天数：每 17 天，跨月也不跑偏', () => {
+    expect(series('FREQ=DAILY;INTERVAL=17', '2026-08-29T09:00', 4))
+      .toEqual(['Tue Sep 15 2026', 'Fri Oct 02 2026', 'Mon Oct 19 2026', 'Thu Nov 05 2026'])
+    expect(describeRrule('FREQ=DAILY;INTERVAL=17')).toBe('每 17 天')
+    expect(describeRrule('FREQ=DAILY;INTERVAL=17', 'en')).toBe('Every 17 days')
+  })
+
   it('每 3 天', () => {
     expect(series('FREQ=DAILY;INTERVAL=3', '2026-08-26T09:00', 3))
       .toEqual(['Sat Aug 29 2026', 'Tue Sep 01 2026', 'Fri Sep 04 2026'])

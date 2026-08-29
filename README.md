@@ -41,7 +41,7 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 - Notes, with Markdown
 - Start date and time
 - Multiple reminders
-- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / yearly, and also "N days after I finish it"
+- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / yearly, **any interval you type in** (every 17 days, say), and also "N days after I finish it"
 - One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
 - **Search** across titles and notes; space-separated words all have to match
 
