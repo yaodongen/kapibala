@@ -277,15 +277,20 @@ export function presetsFor(at: number, lang: Lang = 'zh'): { label: string; rrul
   const nthOrd = fromEnd === -1 ? -1 : nth
   const labels = lang === 'en'
     ? ['Daily', `Weekly on ${EN_DAY[wd]}`, 'Weekdays (Mon–Fri)', `Monthly on the ${ord(day)}`,
-       `Monthly on the ${ord(nthOrd)} ${EN_DAY[wd]}`, `Yearly on ${EN_MONTH[month - 1]} ${day}`]
+       `Monthly on the ${ord(nthOrd)} ${EN_DAY[wd]}`, 'Monthly on the last day',
+       `Yearly on ${EN_MONTH[month - 1]} ${day}`]
     : ['每天', `每周${CN_DAY[wd]}`, '工作日（周一至周五）', `每月 ${day} 日`,
-       `每月${nthOrd === -1 ? '最后一个' : CN_ORD[nthOrd]}${CN_DAY[wd]}`, `每年 ${month} 月 ${day} 日`]
+       `每月${nthOrd === -1 ? '最后一个' : CN_ORD[nthOrd]}${CN_DAY[wd]}`, '每月最后一天',
+       `每年 ${month} 月 ${day} 日`]
   const rrules = [
     'FREQ=DAILY',
     `FREQ=WEEKLY;BYDAY=${wd}`,
     'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
     `FREQ=MONTHLY;BYMONTHDAY=${day}`,
     `FREQ=MONTHLY;BYDAY=${nthOrd}${wd}`,
+    // "每月 31 日"在没有 31 号的月份会跳过（RFC 就是这么定的），
+    // 想"每月末尾都来一次"的人要的是这一条
+    'FREQ=MONTHLY;BYMONTHDAY=-1',
     `FREQ=YEARLY;BYMONTH=${month};BYMONTHDAY=${day}`,
   ]
   return rrules.map((rrule, i) => ({ label: labels[i]!, rrule }))

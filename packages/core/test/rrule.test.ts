@@ -92,6 +92,13 @@ describe('下一次是哪天', () => {
       .toEqual(['Mon Sep 07 2026', 'Mon Sep 21 2026', 'Mon Oct 05 2026'])
   })
 
+  it('预设里的"每月最后一天"：2 月落 28/29，其余落 30/31', () => {
+    expect(series('FREQ=MONTHLY;BYMONTHDAY=-1', '2026-12-31T09:00', 4))
+      .toEqual(['Sun Jan 31 2027', 'Sun Feb 28 2027', 'Wed Mar 31 2027', 'Fri Apr 30 2027'])
+    expect(series('FREQ=MONTHLY;BYMONTHDAY=-1', '2028-01-31T09:00', 2))
+      .toEqual(['Tue Feb 29 2028', 'Fri Mar 31 2028'])      // 闰年
+  })
+
   it('自己填的天数：每 17 天，跨月也不跑偏', () => {
     expect(series('FREQ=DAILY;INTERVAL=17', '2026-08-29T09:00', 4))
       .toEqual(['Tue Sep 15 2026', 'Fri Oct 02 2026', 'Mon Oct 19 2026', 'Thu Nov 05 2026'])
@@ -167,9 +174,11 @@ describe('界面预设', () => {
     // 2026-08-11 是八月第二个周二
     const opts = presetsFor(at('2026-08-11T09:00'))
     expect(opts.map(o => o.label)).toEqual([
-      '每天', '每周周二', '工作日（周一至周五）', '每月 11 日', '每月第二个周二', '每年 8 月 11 日',
+      '每天', '每周周二', '工作日（周一至周五）', '每月 11 日', '每月第二个周二',
+      '每月最后一天', '每年 8 月 11 日',
     ])
     expect(opts[4]!.rrule).toBe('FREQ=MONTHLY;BYDAY=2TU')
+    expect(opts[5]!.rrule).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
   })
 
   it('英文预设：规则一模一样，只有 label 换语言', () => {
@@ -179,7 +188,7 @@ describe('界面预设', () => {
     expect(en.map(o => o.rrule)).toEqual(zh.map(o => o.rrule))
     expect(en.map(o => o.label)).toEqual([
       'Daily', 'Weekly on Tuesday', 'Weekdays (Mon–Fri)', 'Monthly on the 11th',
-      'Monthly on the 2nd Tuesday', 'Yearly on August 11',
+      'Monthly on the 2nd Tuesday', 'Monthly on the last day', 'Yearly on August 11',
     ])
   })
 })
