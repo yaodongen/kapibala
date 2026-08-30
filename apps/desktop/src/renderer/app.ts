@@ -66,6 +66,8 @@ let query = ''            // 搜索词，非空时列表切成搜索结果
 let titleEditing: string | null = null   // 列表里正在就地改标题的那条
 /** 选了"自定义天数…"之后，在哪个下拉旁边展开输入框 */
 let customFor: 'detail' | 'new' | null = null
+/** 点开备注时算好的光标位置，交给 focusEditor 用一次 */
+let pendingNoteCaret: number | null = null
 /**
  * boot() 拿到库状态之前不许画。主进程在 did-finish-load 时就推了一次任务，
  * 那时 vault 还是 null，"上次选中的任务"读不出来，会选错成列表第一条 ——
@@ -403,6 +405,20 @@ document.addEventListener('mousedown', (e) => {
   }
   // 改标题同样要在 mousedown 做：mousedown 会把焦点从上一个输入框挪走，
   // 那一次 focusout 保存会重建列表，click 就落不到这行标题上了（点了没反应）
+  // 点渲染好的备注 → 展开编辑器，光标落在点中的那个字上。
+  // 同样必须在 mousedown 做并拦下默认行为，理由和改标题一样
+  const md = target.closest<HTMLElement>('[data-noteview]')
+  if (md && !(target instanceof HTMLAnchorElement)) {
+    e.preventDefault()
+    const t = tasks.find(x => x.id === md.dataset['noteview'])
+    pendingNoteCaret = noteCaretAt(e.clientX, e.clientY, md, t?.notes ?? '')
+    editing = true
+    render()
+    focusEditor()
+    actedOnMousedown = true
+    return
+  }
+
   const row = target.closest<HTMLElement>('[data-task]')
   if (!row || !target.closest('.title')) return
   // 拦下默认行为：否则浏览器会在 mousedown 之后把焦点移到"被点的那个元素"上，
@@ -411,6 +427,41 @@ document.addEventListener('mousedown', (e) => {
   beginTitleEdit(row.dataset['task']!, e.clientX, e.clientY)
   actedOnMousedown = true
 })
+
+/**
+ * 渲染出来的第 n 个字，对应 Markdown 源码里的哪个位置。
+ *
+ * 渲染只会去掉标记（`**`、`- `、`[]()` 里的地址、`#`），不会凭空加字，
+ * 所以渲染文本一定是源码的子序列 —— 双指针扫一遍就能对上，不用给渲染器
+ * 埋一套源码位置的元信息。对不齐的极端情况最多差几个字，也好过一律跳到末尾。
+ */
+function sourceOffset(source: string, rendered: string, n: number): number {
+  let i = 0, matched = 0
+  while (i < source.length && matched < n) {
+    if (source[i] === rendered[matched]) matched++
+    i++
+  }
+  // 再往前走到"点中的那个字"正前面。不走这一步，光标会停在它前面的换行和
+  // "> "、"- "、"## " 这些标记之前，在那儿打字会把标记挤坏
+  const next = rendered[n]
+  if (next !== undefined) while (i < source.length && source[i] !== next) i++
+  return i
+}
+
+/** 点在渲染后的备注上 → Markdown 源码里的下标 */
+function noteCaretAt(x: number, y: number, md: HTMLElement, source: string): number | null {
+  const doc = document as Document & { caretRangeFromPoint?(x: number, y: number): Range | null }
+  const r = doc.caretRangeFromPoint?.(x, y)
+  if (!r || !md.contains(r.startContainer)) return null
+  // 按文档顺序数一遍：点击处之前有多少个字
+  let n = 0
+  const walker = document.createTreeWalker(md, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node === r.startContainer) return sourceOffset(source, md.textContent ?? '', n + r.startOffset)
+    n += node.textContent?.length ?? 0
+  }
+  return null
+}
 
 /**
  * 点击坐标 → 文本里的第几个字。标题和就地编辑的输入框字体、起点都一样，
@@ -467,8 +518,11 @@ document.addEventListener('contextmenu', (e) => {
 function focusEditor() {
   const el = document.querySelector<HTMLTextAreaElement>('[data-noteedit]')
   if (!el) return
+  // 点开的那一下算出了位置就用它，否则（右键"备注"、新建任务这些）放末尾
+  const at = Math.min(pendingNoteCaret ?? el.value.length, el.value.length)
+  pendingNoteCaret = null
   el.focus()
-  el.setSelectionRange(el.value.length, el.value.length)
+  el.setSelectionRange(at, at)
 }
 
 /** 收起编辑器并落盘。没有"取消"这条路 —— 打过的字一律留下 */

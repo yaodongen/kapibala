@@ -312,6 +312,12 @@ async function selfTest(w: BrowserWindow) {
   if (evalCode || shot) app.quit()
 }
 
+/** 只放行这三种协议：别把任意 scheme 交给系统去执行 */
+function openExternal(url: string) {
+  if (/^(https?:\/\/|mailto:)/i.test(url)) void shell.openExternal(url)
+  else log('info', '挡下了不认识的链接', { url })
+}
+
 function createWindow() {
   win = new BrowserWindow({
     // 备注栏常驻，默认宽度把它算进去了：216 侧栏 + 554 列表 + 340 备注
@@ -325,7 +331,10 @@ function createWindow() {
       sandbox: true,
     },
   })
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' } })
+  win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' } })
+  // 备注里的链接是普通的 <a>，点一下会把整个窗口导航走 —— 应用当场变成一个网页，
+  // 而且没有后退的路。一律拦下，交给系统浏览器
+  win.webContents.on('will-navigate', (e, url) => { e.preventDefault(); openExternal(url) })
   win.loadFile(join(__dirname, 'renderer/index.html'))
   // 点红灯只是把窗口收起来，进程继续跑 —— 下次点 Dock 图标立刻回来，不用重新读库。
   // 真退出的两条路（Dock 右键"退出"、⌘Q）都会先发 before-quit，把 quitting 立起来
