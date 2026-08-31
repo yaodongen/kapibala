@@ -101,9 +101,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   border-radius:7px; margin:0 -8px;
 }
 .task:hover{background:var(--row-hover)}
-/* 勾完先留一秒再消失：前半段维持原样（看清勾上了），后半段淡出 */
-.task.leaving{ animation:taskleave 1s ease-in forwards }   /* 淡出期间仍可点，点一下就退回未完成 */
-@keyframes taskleave{ 0%,45%{ opacity:1 } 100%{ opacity:0 } }
+/* 勾完先停一下再消失：前段维持原样（看清勾上了），后段淡出。
+   时长由 app.ts 的 LINGER 写进 --linger，两边不会各走各的 */
+.task.leaving{ animation:taskleave var(--linger, 450ms) ease-in forwards }   /* 淡出期间仍可点，点一下就退回未完成 */
+@keyframes taskleave{ 0%,35%{ opacity:1 } 100%{ opacity:0 } }
 @media (prefers-reduced-motion:reduce){ .task.leaving{ animation:none; opacity:.5 } }
 .box{
   flex:none; width:17px; height:17px; margin-top:1px; border-radius:50%;

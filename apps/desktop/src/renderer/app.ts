@@ -98,8 +98,10 @@ function ensureSelection(visible: Task[]) {
  * 刚勾完的那条先留一秒再消失：一是看得清"确实勾上了"，二是手滑点错还来得及
  * 再点一下退回去。留在这个表里的任务，视图筛选时当作"还没变"处理。
  */
-const LINGER = 1000
+const LINGER = 450
 const leaving = new Map<string, ReturnType<typeof setTimeout>>()
+// 淡出动画的时长跟着这个常量走，免得两边各写一个数、改一处忘一处
+document.documentElement.style.setProperty('--linger', `${LINGER}ms`)
 function linger(id: string) {
   clearTimeout(leaving.get(id))
   leaving.set(id, setTimeout(() => { leaving.delete(id); render() }, LINGER))
