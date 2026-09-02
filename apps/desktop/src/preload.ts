@@ -15,4 +15,8 @@ api['onShowTask'] = ((cb: (id: string) => void) => {
   ipcRenderer.on('task:show', (_e, id: string) => cb(id))
 }) as never
 
+api['onSyncBusy'] = ((cb: (busy: boolean) => void) => {
+  ipcRenderer.on('sync:busy', (_e, busy: boolean) => cb(busy))
+}) as never
+
 contextBridge.exposeInMainWorld('kapi', api)

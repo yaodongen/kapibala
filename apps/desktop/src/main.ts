@@ -70,6 +70,11 @@ function push() {
   if (win && !win.isDestroyed()) win.webContents.send('tasks:changed', store?.tasks() ?? [])
 }
 
+/** 正在读别的设备的改动。界面收到 true 就挡住编辑，收到 false 放开 */
+function syncBusy(busy: boolean) {
+  if (win && !win.isDestroyed()) win.webContents.send('sync:busy', busy)
+}
+
 /**
  * 同步目录里的文件可能处于中间状态，所以 300ms 防抖 + 忽略自己的目录
  * （自己的状态本来就在内存里）。见 storage.zh.md §6.4
@@ -84,7 +89,16 @@ function watchVault(s: Store) {
       if (name && name.includes(mine)) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(async () => {
-        try { await s.refresh(); push() } catch { /* 同步中的中间状态，下一次事件再试 */ }
+        // 读盘期间挡住编辑：这一刻界面上的任务是旧的，改了会白改（字段级 LWW 下
+        // 甚至可能被对面更晚的写覆盖）。读完立刻放开
+        syncBusy(true)
+        const t0 = Date.now()
+        try { await s.refresh(); push() }
+        catch { /* 同步中的中间状态，下一次事件再试 */ }
+        finally {
+          syncBusy(false)
+          log('info', '读取了别的设备的改动', { ms: Date.now() - t0, tasks: store?.tasks().length })
+        }
       }, 300)
     })
   } catch { /* 目录还不存在，等第一次写入后再说 */ }

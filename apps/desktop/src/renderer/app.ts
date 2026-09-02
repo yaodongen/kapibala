@@ -158,6 +158,7 @@ function applyStatic() {
     ['dlabel', S.notesLabel],
     ['vaultsheettitle', S.vaultSheetTitle], ['vaultadd', S.vaultOpenOther],
     ['vaultforgetnote', S.vaultForgetNote], ['vaultclose', S.close],
+    ['synctitle', S.syncTitle], ['syncsub', S.syncSub],
     ['logsheettitle', S.logTitle], ['logcopy', S.logCopy],
     ['logreveal', S.logReveal], ['logclose', S.close],
   ]
@@ -830,6 +831,38 @@ si.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { si.value = ''; query = ''; render() }
 })
 
+/**
+ * 同步中的挡板。
+ *
+ * 读盘通常只要几毫秒，所以 200ms 内读完的一律不弹 —— 否则对面每敲一下键，
+ * 这边就闪一下挡板，比不挡还烦。真弹出来了就至少留 350ms，免得刚看见就消失。
+ */
+const SYNC_DELAY = 200, SYNC_MIN = 350
+let syncTimer: ReturnType<typeof setTimeout> | null = null
+let syncShownAt = 0
+
+function showSync(on: boolean) {
+  const el = $('syncsheet') as HTMLElement
+  if (on) {
+    if (syncTimer || !el.hidden) return
+    syncTimer = setTimeout(() => {
+      syncTimer = null
+      syncShownAt = Date.now()
+      // 挡板一盖上就不能编辑了，所以先让正在编辑的框失焦 ——
+      // 走它自己的保存路径，打了一半的字不会白打
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
+      el.hidden = false
+    }, SYNC_DELAY)
+    return
+  }
+  if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; return }   // 还没弹就结束了
+  if (el.hidden) return
+  const left = SYNC_MIN - (Date.now() - syncShownAt)
+  if (left > 0) setTimeout(() => { el.hidden = true }, left)
+  else el.hidden = true
+}
+
+kapi.onSyncBusy(showSync)
 kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
 kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
   selected = id

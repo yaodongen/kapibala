@@ -267,6 +267,17 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .sheet-foot button:hover{ background:var(--row-hover) }
 .sheet-foot .primary{ background:var(--accent); border-color:transparent; color:#fff }
 .sheet-foot .right{ margin-left:auto }
+/* 同步挡板：比别的浮层再高一层 —— 这一刻确实不该让人改东西 */
+#syncsheet{ z-index:80 }
+.syncbox{ max-width:320px; width:auto; flex-direction:row; align-items:center;
+          gap:12px; padding:18px 22px }
+.syncbox b{ font-size:13.5px }
+.syncbox .sub{ font-size:11.5px; color:var(--dim); margin-top:2px; line-height:1.45 }
+.spinner{ flex:none; width:18px; height:18px; border-radius:50%;
+          border:2px solid var(--border); border-top-color:var(--accent);
+          animation:spin .7s linear infinite }
+@keyframes spin{ to{ transform:rotate(360deg) } }
+@media (prefers-reduced-motion:reduce){ .spinner{ animation-duration:2.4s } }
 .titlebar{ position:fixed; top:0; left:0; right:0; height:34px; z-index:50;
            -webkit-app-region:drag; app-region:drag }
 /* 可拖动区域里的可点击元素要单独排除，否则点不动 */
@@ -366,6 +377,17 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
       <button class="primary" id="vaultadd"></button>
       <span class="note" id="vaultforgetnote"></span>
       <button class="right" id="vaultclose"></button>
+    </div>
+  </div>
+</div>
+
+<!-- 同步中的挡板：主进程读别的设备的改动时盖上，读完自动收 -->
+<div class="sheet" id="syncsheet" hidden>
+  <div class="sheet-box syncbox">
+    <div class="spinner"></div>
+    <div>
+      <b id="synctitle"></b>
+      <div class="sub" id="syncsub"></div>
     </div>
   </div>
 </div>

@@ -65,6 +65,8 @@ export type Events = {
   'tasks:changed': (tasks: Task[]) => void
   /** 右键菜单里选了"备注"，让界面把这条任务的详情栏打开 */
   'task:show': (id: string) => void
+  /** 正在读别的设备同步过来的改动。界面据此挡住编辑，读完自动放开 */
+  'sync:busy': (busy: boolean) => void
 }
 
 export const CHANNELS = [
@@ -78,4 +80,5 @@ export type Api = {
 } & {
   onTasksChanged(cb: (tasks: Task[]) => void): void
   onShowTask(cb: (id: string) => void): void
+  onSyncBusy(cb: (busy: boolean) => void): void
 }

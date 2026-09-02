@@ -113,6 +113,8 @@ const ZH = {
   welcomeFailed: (msg: string) => `打不开这个文件夹：${msg}`,
 
   // ── 日志面板 ──
+  syncTitle: '正在同步…',
+  syncSub: '在读别的设备刚才的改动，读完就能继续',
   logTitle: '日志',
   logCopy: '复制全部',
   logCopied: '已复制',
@@ -219,6 +221,8 @@ const EN: typeof ZH = {
   welcomeLog: 'Something wrong? View the log',
   welcomeFailed: (msg) => `Cannot open this folder: ${msg}`,
 
+  syncTitle: 'Syncing…',
+  syncSub: 'Reading what your other Mac just changed — one moment',
   logTitle: 'Log',
   logCopy: 'Copy all',
   logCopied: 'Copied',
