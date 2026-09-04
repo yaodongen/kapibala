@@ -58,7 +58,9 @@ type ViewId = typeof VIEWS[number]['id']
 
 let tasks: Task[] = []
 let vault: VaultState | null = null
-let view: ViewId = 'today'
+/** 打开就停在这个视图：只看今天容易漏掉马上要到的事，一周的视野更实用 */
+const DEFAULT_VIEW: ViewId = 'next7'
+let view: ViewId = DEFAULT_VIEW
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
@@ -494,6 +496,9 @@ document.addEventListener('click', async (e) => {
   }
   const taskRow = target.closest<HTMLElement>('[data-task]')
   if (taskRow && !target.closest('[data-act]')) {
+    // 点在正在编辑的标题框里 = 想挪一下光标，不是要换选中项。
+    // 不挡住的话这一下会走到下面的"选中"分支，把编辑态关掉、还顺手打开备注
+    if (target.closest('[data-titleedit]')) return
     const id = taskRow.dataset['task']!
     selected = id
     remember(id)
@@ -671,7 +676,7 @@ async function switchVault(id: string) {
     vault = await kapi['vault:open'](id)
     tasks = await kapi['task:list']()
     ;($('vaultsheet') as HTMLElement).hidden = true
-    view = 'today'
+    view = DEFAULT_VIEW
     render()
   } catch (e) {
     // 失败就把原因写在那一行上，别把面板关掉
@@ -700,7 +705,7 @@ $('vaultadd').addEventListener('click', async () => {
   vault = v
   tasks = await kapi['task:list']()
   ;($('vaultsheet') as HTMLElement).hidden = true
-  view = 'today'
+  view = DEFAULT_VIEW
   render()
 })
 
