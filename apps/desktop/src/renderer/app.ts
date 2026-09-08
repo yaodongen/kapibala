@@ -417,6 +417,10 @@ document.addEventListener('mousedown', (e) => {
     e.preventDefault()
     const t = tasks.find(x => x.id === md.dataset['noteview'])
     pendingNoteCaret = noteCaretAt(e.clientX, e.clientY, md, t?.notes ?? '')
+    // 点备注前先提交列表里正在编辑的标题（blur 走它的保存路径并关掉编辑态）。
+    // 不处理的话，focusEditor() 给备注框 focus 时会把标题框挤掉焦 → saveRowTitle
+    // 同步 render() → 刚 focus 的备注框被换掉，焦点落回 body，第一下就打不了字。
+    ;(document.querySelector<HTMLInputElement>('[data-titleedit]'))?.blur()
     editing = true
     render()
     focusEditor()
@@ -492,6 +496,7 @@ document.addEventListener('click', async (e) => {
   }
   const noteview = target.closest<HTMLElement>('[data-noteview]')
   if (noteview && !(target instanceof HTMLAnchorElement)) {
+    ;(document.querySelector<HTMLInputElement>('[data-titleedit]'))?.blur()
     editing = true; render(); focusEditor(); return
   }
   const taskRow = target.closest<HTMLElement>('[data-task]')
@@ -872,6 +877,7 @@ kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
 kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
   selected = id
   remember(id)
+  ;(document.querySelector<HTMLInputElement>('[data-titleedit]'))?.blur()
   editing = !tasks.find(t => t.id === id)?.notes?.trim()
   render(); focusEditor()
 })
