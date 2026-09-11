@@ -1,6 +1,4 @@
-# Kapibala · 卡皮巴拉
-
-<img src="./ui/icon-512.png" width="112" alt="Kapibala app icon">
+# <img src="./ui/icon-512.png" width="36" align="middle" alt="Kapibala"> Kapibala · 卡皮巴拉
 
 **English** · [简体中文](./README.zh.md)
 

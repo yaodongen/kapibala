@@ -1,6 +1,4 @@
-# Kapibala · 卡皮巴拉
-
-<img src="./ui/icon-512.png" width="112" alt="卡皮巴拉的应用图标">
+# <img src="./ui/icon-512.png" width="36" align="middle" alt="卡皮巴拉"> Kapibala · 卡皮巴拉
 
 [English](./README.md) · **简体中文**
 
