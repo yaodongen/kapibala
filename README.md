@@ -1,16 +1,18 @@
 # Kapibala · 卡皮巴拉
 
+<img src="./ui/icon-512.png" width="112" alt="Kapibala app icon">
+
 **English** · [简体中文](./README.zh.md)
 
 Kapibala is a to-do app for macOS. All of your data lives on your own disk.
 
-**It pairs best with iCloud Drive.** Put the folder in iCloud (or Dropbox, or any sync service) and your Macs stay in sync automatically.
+**It pairs best with iCloud Drive.** Put the folder in iCloud (or Dropbox, Nutstore, or any sync service) and your Macs stay in sync automatically.
 
 ![The Kapibala main window](./docs/images/screenshot.png)
 
 ## 1. Download
 
-Grab the matching `.dmg` from [Releases](https://github.com/yaodongen/kapibala/releases/latest), open it, and drag Kapibala into your Applications folder.
+Grab the matching `.dmg` from [Releases](https://github.com/yaodongen/kapibala/releases/latest), open it, and drag Kapibala into your Applications folder. It runs on macOS 12 (Monterey) or later.
 
 | Your Mac | Download |
 | -------------- | ---------------------- |
@@ -40,8 +42,7 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 
 - Notes, with Markdown
 - Start date and time
-- Multiple reminders
-- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, any interval you type in (every 17 days, say), and also "N days after I finish it"
+- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, and **every N days** (type 17, say)
 - One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
 - **Search** across titles and notes; space-separated words all have to match
 
@@ -63,7 +64,7 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 
 - **Zero network requests.** The app itself never goes online. No account, no telemetry, no crash reports, no "anonymous usage statistics".
 - **Syncing is done by the provider you choose.** Whether your data goes to a cloud, and whose cloud, is your call. Skip iCloud and it is a purely local app.
-- **A readable format.** Storage is plain text, not an opaque binary blob. You can see exactly what the app wrote, whenever you want.
+- **A readable format.** Storage is JSON Lines — one JSON object per line, plain text, not an opaque binary blob. You can see exactly what the app wrote, whenever you want. The layout is documented in [`docs/storage.md`](./docs/storage.md).
 
 ## 5. FAQ
 
@@ -71,11 +72,26 @@ Want a backup? `cp -r` or Time Machine. Done with the app? Delete it — the dat
 Mac only. A narrow scope, done properly.
 
 **Do I have to use iCloud?**
-No. The vault folder can live anywhere — `~/Documents`, an external drive, Dropbox, any sync service. Keep it off a synced drive and the app is purely local.
+No. The vault folder can live anywhere — `~/Documents`, an external drive, Dropbox, Nutstore, any sync service. Keep it off a synced drive and the app is purely local.
 
 **"Kapibala"?**
 Capybara. The least anxious animal on earth. A to-do list should make you a little more like one.
 
-## 6. License
+## 6. Development
+
+Needs Node 22.18+ (the sources run directly, there is no compile step) and `corepack`.
+
+```bash
+make install      # install dependencies
+make desktop      # build the app and launch it
+make check        # type check + unit tests
+make e2e          # simulate two Macs syncing over a real filesystem
+make app          # build Kapibala.app
+make install-app  # build it and copy it into /Applications
+```
+
+Design notes live in [`docs/`](./docs): [`architecture.md`](./docs/architecture.md) for how the pieces fit together, [`storage.md`](./docs/storage.md) for the on-disk format.
+
+## 7. License
 
 MIT, see [LICENSE](./LICENSE).

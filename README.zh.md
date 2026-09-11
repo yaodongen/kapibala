@@ -1,30 +1,30 @@
 # Kapibala · 卡皮巴拉
 
+<img src="./ui/icon-512.png" width="112" alt="卡皮巴拉的应用图标">
+
 [English](./README.md) · **简体中文**
 
 Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存储在你自己的磁盘上。
 
-**最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云），多台 Mac 就自动同步
+**最佳搭配是 iCloud Drive。** 把这个文件夹放进 iCloud（或 Dropbox、坚果云，或任何同步服务），多台 Mac 就自动同步。
 
 ![卡皮巴拉的主界面](./docs/images/screenshot.zh.png)
 
 ## 1. 下载
 
-到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。
-
+到 [Releases](https://github.com/yaodongen/kapibala/releases/latest) 下载对应的 `.dmg`，打开后把 Kapibala 拖进「应用程序」。需要 macOS 12（Monterey）或更新版本。
 
 | 你的 Mac         | 下载                     |
 | -------------- | ---------------------- |
 | Apple 芯片（M 系列） | `Kapibala-*-arm64.dmg` |
 | Intel 芯片       | `Kapibala-*-x64.dmg`   |
 
-
 > 这个包还没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
 >
 > - 双击一次（会被拒），然后到 **系统设置 → 隐私与安全性**，在下方点「仍要打开」
 > - 或者终端里一句：`xattr -dr com.apple.quarantine /Applications/Kapibala.app`
 >
->  Apple Developer Program 需要99 美元/年。这个项目免费，暂时没交这笔钱，所以只能麻烦你多点一下。
+> Apple Developer Program 需要 99 美元/年。这个项目免费，暂时没交这笔钱，所以只能麻烦你多点一下。
 
 ## 2. 快速开始
 
@@ -41,9 +41,8 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 **任务**
 
 - 备注（支持 Markdown）
-- 开始时间
-- 多个提醒
-- **周期任务**：每天 / 每周某天 / 工作日 / 每月某日 / **每月第二个周二** / **每月最后一天** / 每年，也可以自己填天数（比如每 17 天），还支持「完成后 N 天再来」
+- 开始日期和时间
+- **周期任务**：每天 / 每周某天 / 工作日 / 每月某日 / **每月第二个周二** / **每月最后一天** / 每年，也可以自己填天数（比如每 17 天）
 - 一键完成、一键删除（进垃圾桶，不是真删）；垃圾桶可以一键清空
 - **搜索**：标题和备注，空格分隔多个词按全部命中
 
@@ -65,7 +64,7 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 
 - **零网络请求。** 应用本身不联网。没有账号、没有遥测、没有崩溃上报、没有「匿名使用统计」。
 - **同步由你选的服务商完成。** 数据是否上云、上哪家的云，是你的决定。不用 iCloud 就是纯本地应用。
-- **格式可读。** 存储是纯文本，不是二进制黑盒，你随时能看清应用写了什么。
+- **格式可读。** 存储是 JSON Lines（一行一个 JSON 对象），纯文本，不是二进制黑盒，你随时能看清应用写了什么。格式说明见 [`docs/storage.zh.md`](./docs/storage.zh.md)。
 
 ## 5. 常见问题
 
@@ -73,12 +72,27 @@ Kapibala（卡皮巴拉）是一个 macOS 待办清单应用，所有数据存�
 只做 Mac，范围收敛，做好一件事。
 
 **必须用 iCloud 吗？**
-不。库目录放在任何地方都行——`~/Documents`、外置硬盘、Dropbox、坚果云。不放同步盘就是纯本地应用。
+不。库目录放在任何地方都行——`~/Documents`、外置硬盘、Dropbox、坚果云、任何同步服务。不放同步盘就是纯本地应用。
 
 **「卡皮巴拉」？**
 水豚。世界上最不焦虑的动物。待办清单应该让你更像它一点。
 
-## 6. 许可
+## 6. 开发
+
+需要 Node 22.18+（源码直接跑，没有编译步骤）和 `corepack`。
+
+```bash
+make install      # 装依赖
+make desktop      # 构建并启动桌面版
+make check        # 类型检查 + 单元测试
+make e2e          # 真实文件系统上模拟两台 Mac 同步
+make app          # 打出 Kapibala.app
+make install-app  # 打包并装进 /Applications
+```
+
+设计说明在 [`docs/`](./docs)：[`architecture.zh.md`](./docs/architecture.zh.md) 讲各部分怎么配合，[`storage.zh.md`](./docs/storage.zh.md) 讲磁盘上的格式。
+
+## 7. 许可
 
 MIT，见 [LICENSE](./LICENSE)。
 
