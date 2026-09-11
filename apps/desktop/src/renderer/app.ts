@@ -351,7 +351,7 @@ function renderDetail() {
   // 日期和时间可以直接改；清空日期就是"未安排"。
   // 叉号只在真有具体时间时出现，贴在时间框右边 —— 它只去掉时间，日期留着
   const timed = d !== null && !t.isAllDay
-  if (!typingCustom) $('dmeta').innerHTML =
+  if (!typingCustom && !whenBusy) $('dmeta').innerHTML =
     `<input type="date" id="ddate" value="${iso}">` +
     `<span class="dtimebox">` +
       `<input type="time" id="dtime" value="${timed ? hhmm24(t.startAt!) : ''}">` +
@@ -379,6 +379,16 @@ function renderDetail() {
  */
 let actedOnMousedown = false
 /**
+ * 详情栏里日期/时间/重复这一排（#dmeta）正在被点：mousedown 到 click 之间不要重建它。
+ *
+ * 和勾选、改标题同一个道理：mousedown 会把焦点从备注/标题编辑框里挪走 → focusout
+ * → 保存 → render() → renderDetail 重建 dmeta，被点的日期框在 mouseup 之前就从 DOM 里
+ * 消失了，click 落不到它身上 —— 日历按钮于是"第一下没反应，得点第二下"。
+ * 而日历是原生控件，没法像勾选那样挪到 mousedown 里做，只能让 renderDetail 在这个
+ * 空档里别碰 dmeta。
+ */
+let whenBusy = false
+/**
  * 点标题进入就地编辑。光标落在点中的那个字旁边 —— 想改中间一个字，
  * 不用先跳到末尾再按一路左键。
  */
@@ -398,7 +408,9 @@ function beginTitleEdit(id: string, x: number, y: number) {
 
 document.addEventListener('mousedown', (e) => {
   actedOnMousedown = false
+  whenBusy = false
   const target = e.target as HTMLElement
+  if (target.closest('#dmeta')) whenBusy = true
   const btn = target.closest<HTMLElement>('[data-act]')
   if (btn) {
     const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete'
@@ -484,6 +496,7 @@ function caretOffsetAt(x: number, y: number): number | null {
 }
 
 document.addEventListener('click', async (e) => {
+  whenBusy = false        // 这次点完，允许 renderDetail 重建 dmeta
   // mousedown 里已经处理完的（勾选、进入改标题），click 不要再来一遍
   if (actedOnMousedown) { actedOnMousedown = false; return }
   const target = e.target as HTMLElement
@@ -652,13 +665,25 @@ const ri = $('newRepeat') as HTMLSelectElement
 ti.addEventListener('keydown', async (e) => {
   if (e.key !== 'Enter' || !ti.value.trim()) return
   const at = di.value ? +new Date(`${di.value}T00:00`) : today()   // 没选日期就是今天
-  await kapi['task:create']({
+  const id = await kapi['task:create']({
     title: ti.value.trim(),
     startAt: at,
     ...(ri.value ? { repeat: { rrule: ri.value } } : {}),
   })
   ti.value = ''; di.value = ''; ri.value = ''
   syncNewRepeat()
+  // 刚建的任务直接接进详情栏 —— 建完常常还要补备注、改时间、加重复，
+  // 不然得回列表里找它、再点开一次。焦点仍然留在添加栏（上面刚清空），
+  // 所以连着敲下一条不会被打断
+  selected = id
+  remember(id)
+  editing = false
+  // 正常情况下 tasks:changed 比这条命令先回来。推送要是还没到，就自己拉一次 ——
+  // 少了这步 ensureSelection 找不到新任务，会退回列表第一条，详情栏显示错的
+  if (!tasks.some(t => t.id === id)) tasks = await kapi['task:list']()
+  render()
+  // 新任务可能落在列表可视区之外，带一下看不出来它去哪了
+  document.querySelector<HTMLElement>(`[data-task="${id}"]`)?.scrollIntoView({ block: 'nearest' })
 })
 
 /* ── 切换库 ── */
@@ -772,6 +797,11 @@ async function saveWhen() {
 }
 
 document.addEventListener('change', (e) => {
+  // 这次交互定下来了（选了日期 / 选了重复规则），whenBusy 可以放开。
+  // 不能只靠 click：原生下拉在 macOS 上是系统弹层，点开时 click 不一定落在
+  // 这个 select 上 —— 只挂 click 的话 whenBusy 会一直立着，dmeta 再也不重建，
+  // 选「自定义天数…」那个输入框就永远不出现
+  whenBusy = false
   const el = e.target as HTMLElement
   if (el.id === 'ddate' || el.id === 'dtime') void saveWhen()
   if (el.id === 'drepeat' && selected) {
