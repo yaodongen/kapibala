@@ -1,4 +1,4 @@
-# <img src="./ui/icon-512.png" width="36" align="middle" alt="卡皮巴拉"> Kapibala · 卡皮巴拉
+# <sub><img src="./ui/icon-512.png" width="33" alt="卡皮巴拉"></sub> Kapibala · 卡皮巴拉
 
 [English](./README.md) · **简体中文**
 
