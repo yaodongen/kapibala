@@ -17,7 +17,7 @@ ICLOUD  := $(HOME)/Library/Mobile Documents/com~apple~CloudDocs
 
 .DEFAULT_GOAL := help
 .PHONY: help desktop app dmg install-app tag run check test e2e deploy doctor install unlink \
-        watch icons clean distclean typecheck link desktop-build
+        watch icons preview preview-shot clean distclean typecheck link desktop-build
 
 help:
 	@echo ""
@@ -44,6 +44,8 @@ help:
 	@echo ""
 	@echo "  偶尔"
 	@echo "    make watch       测试 watch 模式"
+	@echo "    make preview     用浏览器预览 README / docs 的 GitHub 渲染效果"
+	@echo "    make preview-shot 不开浏览器，把 README.zh.md 截成一张 png"
 	@echo "    make icons       从 ui/icon.svg 重新导出 png 和 icns"
 	@echo "    make clean       清理临时产物"
 	@echo "    make distclean   连 node_modules 一起删"
@@ -151,6 +153,15 @@ unlink:
 
 watch:
 	@$(PNPM) test:watch
+
+# 模拟 GitHub 的渲染（mermaid、表格、代码高亮），push 之前先看一眼。
+# 别的文件 / 别的主题直接调脚本：
+#   node scripts/preview.mjs docs/storage.zh.md --theme dark --shot /tmp/s.png
+preview:
+	@node scripts/preview.mjs $(FILE)
+
+preview-shot:
+	@node scripts/preview.mjs $(or $(FILE),README.zh.md) --shot /tmp/kapibala-preview.png
 
 icons:
 	@bash scripts/icons.sh
