@@ -288,8 +288,39 @@ function keepTitleEdit(): (() => void) {
   }
 }
 
+/**
+ * 换掉整个列表时，滚动位置自己钉住，**不指望浏览器的 scroll anchoring**。
+ *
+ * 全量重建 innerHTML 时它会算歪锚点：内容一个字节没变，也把 scrollTop 往下推一行。
+ * 用户看到的就是"点一下列表自己往上跑一行"，连点就一路往上（见 `.list` 上的
+ * `overflow-anchor:none`）。所以这里自己锚：记住视口里最上面那条任务是谁、
+ * 离列表顶边多远，重建完按同样的距离把它放回去；同步过来几条、上面少一条也照样钉得住。
+ */
+function keepScroll(): () => void {
+  const list = $('list')
+  const viewTop = list.getBoundingClientRect().top
+  const rows = list.querySelectorAll<HTMLElement>('[data-task]')
+  let anchor: HTMLElement | null = null
+  for (let i = 0; i < rows.length; i++) {
+    const el = rows[i]!
+    if (el.getBoundingClientRect().bottom > viewTop) { anchor = el; break }
+  }
+  const id = anchor?.dataset['task']
+  const offset = anchor ? anchor.getBoundingClientRect().top - viewTop : 0
+  return () => {
+    // 锚那条没了（勾掉、删掉、换到别的视图）就不动它，退回浏览器的默认表现
+    if (!id) return
+    const next = list.querySelector<HTMLElement>(`[data-task="${id}"]`)
+    if (!next) return
+    // 用**当前**的列表顶边算，而不是记下来的那个：这次重画可能让顶栏的 banner
+    // 出来或消失，列表整体上下挪了，锚点相对列表的位置才是要保住的东西
+    list.scrollTop += next.getBoundingClientRect().top - list.getBoundingClientRect().top - offset
+  }
+}
+
 function render() {
   const restoreTitleEdit = keepTitleEdit()
+  const restoreScroll = keepScroll()
   $('nav').innerHTML = VIEWS.map((v, i) => {
     const n = pick(v.id).length
     return (i === 4 ? '<div class="sep"></div>' : '') +
@@ -337,6 +368,7 @@ function render() {
       results ? S.emptySearch
       : view === 'trash' ? S.emptyTrash : view === 'done' ? S.emptyDone : S.emptyList)}</div>`
     renderDetail()
+    restoreScroll()
     restoreTitleEdit()
     return
   }
@@ -345,6 +377,7 @@ function render() {
     g.label ? `<div class="ghead ${g.overdue ? 'overdue' : ''}">${g.label}${
       g.wd ? `<span class="wd">${g.wd}</span>` : ''}</div>` : ''
   }${g.items.map(t => row(t, doneList)).join('')}</section>`).join('')
+  restoreScroll()
   restoreTitleEdit()
 }
 

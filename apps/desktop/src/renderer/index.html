@@ -91,7 +91,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .add .customdays input{ padding:7px 8px; font-size:12.5px }
 .dmeta .customdays{ font-size:11.5px }
 .dmeta .customdays input{ font-size:11.5px }
-.list{flex:1; overflow-y:auto; padding:0 28px 40px}
+/* overflow-anchor:none：列表是整块重建的，浏览器自带的 scroll anchoring 在这种
+   全量换 DOM 的场合会算歪锚点 —— 内容没变也把 scrollTop 往下推一行，看着就是
+   "点一下列表自己往上跑"。滚动位置改由 app.ts 的 keepScroll() 自己钉 */
+.list{flex:1; overflow-y:auto; padding:0 28px 40px; overflow-anchor:none}
 
 /* ── 分组 ── */
 .group{margin-top:18px}
