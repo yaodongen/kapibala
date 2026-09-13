@@ -128,9 +128,17 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
             outline:none; background:none; color:var(--text);
             -webkit-user-select:text; user-select:text }
 .task.is-done .title{color:var(--dim); text-decoration:line-through}
+/* 已完成列表整页都是打了钩的 —— 打钩本身就表示完成，标题不用再划一道删除线。
+   搜索和垃圾桶里完成的任务和未完成的混在一起，那条线还得留着 */
+.list.alldone .task.is-done .title{text-decoration:none}
 /* 时间贴在整行末尾，跟标题同一行 */
 .when{ flex:none; margin-left:8px; margin-top:1px; font-size:11.5px; color:var(--dim);
        font-variant-numeric:tabular-nums; white-space:nowrap }
+/* 已完成视图的最左边那一列：几点几分完成的（哪一天在分组标题上）。
+   定宽 + 等宽数字，各行的时间才对得齐；留空的那一格也占着位，取消勾选时整行不会往左跳。
+   宽度由 app.ts 按语言写进 --doneat-w —— 英文是 "11:58 PM"，比中文的 "23:58" 宽 */
+.doneat{ flex:none; width:var(--doneat-w, 44px); margin-top:1px; font-size:11.5px; color:var(--dim);
+         font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap }
 .tag{
   display:inline-flex; align-items:center; gap:3px; padding:0 5px;
   border-radius:4px; background:var(--accent-soft); color:var(--accent);

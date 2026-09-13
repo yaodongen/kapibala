@@ -41,6 +41,7 @@ const dayLabel = (ts: number) => {
   const t = today()
   if (ts === t) return S.dayToday
   if (ts === t + DAY) return S.dayTomorrow
+  if (ts === t - DAY) return S.dayYesterday
   return S.dayLabel(new Date(ts))
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
@@ -102,15 +103,25 @@ function ensureSelection(visible: Task[]) {
  */
 const LINGER = 450
 const leaving = new Map<string, ReturnType<typeof setTimeout>>()
+/**
+ * 刚取消勾选那条**原来**的完成时间。取消之后 completedAt 就清掉了，
+ * 可它还要在列表里淡出 450ms —— 没有这个记录，它会被归到"今天"那一组的最后一行，
+ * 淡出期间整行看着往下跳。记着旧值，它就停在原地慢慢淡掉。
+ */
+const wasDoneAt = new Map<string, number>()
 // 淡出动画的时长跟着这个常量走，免得两边各写一个数、改一处忘一处
 document.documentElement.style.setProperty('--linger', `${LINGER}ms`)
 function linger(id: string) {
+  const prev = tasks.find(t => t.id === id)?.completedAt
+  if (prev !== undefined && prev !== null) wasDoneAt.set(id, prev)
   clearTimeout(leaving.get(id))
-  leaving.set(id, setTimeout(() => { leaving.delete(id); render() }, LINGER))
+  leaving.set(id, setTimeout(() => { leaving.delete(id); wasDoneAt.delete(id); render() }, LINGER))
 }
 
 const alive = () => tasks.filter(t => !t.deleted)
 const undone = () => alive().filter(t => !t.completedAt || leaving.has(t.id))
+/** 这条任务算"什么时候完成的"：正在淡出的那条 completedAt 已经空了，退回记下来的旧值 */
+const doneAtOf = (t: Task) => t.completedAt ?? wasDoneAt.get(t.id)
 
 function pick(v: ViewId): Task[] {
   const t0 = today()
@@ -120,13 +131,29 @@ function pick(v: ViewId): Task[] {
   if (v === 'all') return undone()
   // 已完成视图里取消勾选也一样，先留一秒
   if (v === 'done') return alive().filter(t => t.completedAt || leaving.has(t.id))
-    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+    .sort((a, b) => (doneAtOf(b) ?? 0) - (doneAtOf(a) ?? 0))
   return tasks.filter(t => t.deleted)
 }
 
 type Group = { label: string; wd: string; items: Task[]; overdue?: boolean }
 function group(list: Task[], v: ViewId): Group[] {
-  if (v === 'done' || v === 'trash') return [{ label: '', wd: '', items: list }]
+  if (v === 'trash') return [{ label: '', wd: '', items: list }]
+  // 已完成按"哪天完成的"分组，最近的一天在最前 —— 和"最近 7 天"同一套观感，
+  // 一眼就能看出这些事是什么时候了结的
+  if (v === 'done') {
+    const byDay = new Map<number, Task[]>()
+    for (const t of list) {
+      // 刚取消勾选、正在淡出的那条用记下来的旧时间，整行原地不动（见 doneAtOf）
+      const d = dayStart(doneAtOf(t) ?? Date.now())
+      const arr = byDay.get(d) ?? []
+      arr.push(t); byDay.set(d, arr)
+    }
+    return [...byDay.keys()].sort((a, b) => b - a).map(d => ({
+      label: dayLabel(d), wd: weekday(d),
+      // 同一天里也是最近完成的排前面
+      items: byDay.get(d)!.sort((x, y) => (doneAtOf(y) ?? 0) - (doneAtOf(x) ?? 0)),
+    }))
+  }
   const t0 = today(), byDay = new Map<number, Task[]>(), over: Task[] = [], none: Task[] = []
   for (const t of list) {
     if (t.startAt === undefined) { none.push(t); continue }
@@ -175,6 +202,8 @@ function applyStatic() {
   document.querySelectorAll<HTMLElement>('[data-lang]').forEach(el => { el.title = S.langSwitchTip })
   // 空备注的占位文字在 CSS 的 ::before 里，只能靠变量递进去
   document.documentElement.style.setProperty('--md-empty', JSON.stringify(S.notesEmpty))
+  // 已完成列表最左边那一列的宽度：英文写 "11:58 PM"，比中文的 "23:58" 宽不少
+  document.documentElement.style.setProperty('--doneat-w', lang === 'en' ? '56px' : '44px')
 }
 
 /** 换语言不用重启窗口：文案都是 render() 时才取的 */
@@ -275,6 +304,13 @@ function render() {
 
   const visible = results ?? pick(view)
   ensureSelection(visible)
+  /**
+   * 这一屏是"已完成"列表（不是搜索、不是垃圾桶）。
+   * 它两处特殊：行首多一列完成时间；整页任务都打了钩，标题不再划删除线 ——
+   * 打钩本身就表示完成了（见 index.html 的 .list.alldone）
+   */
+  const doneList = view === 'done' && !results
+  $('list').classList.toggle('alldone', doneList)
   const groups = results
     ? [{ label: '', wd: '', items: results }]     // 搜索结果按相关度排，不按日期分组
     : group(visible, view)
@@ -290,11 +326,11 @@ function render() {
   $('list').innerHTML = groups.map(g => `<section class="group">${
     g.label ? `<div class="ghead ${g.overdue ? 'overdue' : ''}">${g.label}${
       g.wd ? `<span class="wd">${g.wd}</span>` : ''}</div>` : ''
-  }${g.items.map(row).join('')}</section>`).join('')
+  }${g.items.map(t => row(t, doneList)).join('')}</section>`).join('')
   restoreTitleEdit()
 }
 
-function row(t: Task): string {
+function row(t: Task, doneList = false): string {
   // 行末那一小段时间：
   //   今天以后的，日期已经写在分组标题上了，所以只补"周三 18:00"
   //   逾期的，分组标题只有"已逾期"三个字 —— 不带上原来的日期就不知道拖了多久
@@ -310,6 +346,10 @@ function row(t: Task): string {
     : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
   return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
                leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
+    ${doneList
+      // 已完成列表：整行最左边是"几点几分完成的"，日期在分组标题上。
+      // 刚取消勾选那条已经没时间了，照样占住这一格，免得整行往左跳一下
+      ? `<span class="doneat">${t.completedAt ? hhmm(t.completedAt) : ''}</span>` : ''}
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
     <div class="body">${titleEditing === t.id

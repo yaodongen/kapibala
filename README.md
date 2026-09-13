@@ -82,7 +82,7 @@ Because no file is ever written by two Macs, the classic synced-folder failure â
 - **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
 - Next 30 days: same grouping, for the month ahead
 - All tasks
-- Completed
+- **Completed**: grouped by the day you finished it, most recent day first, with the time of day on the left of each row
 - Trash
 
 **Interface**

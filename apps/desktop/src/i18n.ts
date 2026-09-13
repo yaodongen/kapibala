@@ -44,7 +44,7 @@ const ZH = {
   all: '全部任务',
   allSub: '所有未完成的任务',
   done: '已完成',
-  doneSub: '最近完成的排在前面',
+  doneSub: '按完成日期分组，最近完成的排在前面',
   trash: '垃圾桶',
   trashSub: '右键可以恢复或彻底删除',
 
@@ -59,6 +59,7 @@ const ZH = {
   unscheduled: '未安排',
   dayToday: '今天',
   dayTomorrow: '明天',
+  dayYesterday: '昨天',
   /** 日期分组的标题：8月26日 */
   dayLabel: (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`,
   weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
@@ -159,7 +160,7 @@ const EN: typeof ZH = {
   all: 'All tasks',
   allSub: 'Everything not done yet',
   done: 'Completed',
-  doneSub: 'Most recently completed first',
+  doneSub: 'Grouped by the day you finished, most recent first',
   trash: 'Trash',
   trashSub: 'Right-click to restore or delete for good',
 
@@ -173,6 +174,7 @@ const EN: typeof ZH = {
   unscheduled: 'Unscheduled',
   dayToday: 'Today',
   dayTomorrow: 'Tomorrow',
+  dayYesterday: 'Yesterday',
   dayLabel: (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
   emptyTrash: 'The trash is empty',
