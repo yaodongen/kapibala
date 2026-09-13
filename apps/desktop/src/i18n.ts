@@ -33,6 +33,9 @@ const ZH = {
   /** 语言切换按钮上写的是"切过去的那个语言"，所以中文界面上写 English */
   langOther: 'English',
   langSwitchTip: '切换界面语言',
+  /** 主题开关的悬停提示写"点了会变成什么"，和语言按钮一个规矩 */
+  themeToDark: '切换到夜间模式',
+  themeToLight: '切换到日间模式',
 
   // ── 视图 ──
   today: '今天',
@@ -150,6 +153,8 @@ const EN: typeof ZH = {
   viewLog: 'View log',
   langOther: '中文',
   langSwitchTip: 'Switch interface language',
+  themeToDark: 'Switch to dark mode',
+  themeToLight: 'Switch to light mode',
 
   today: 'Today',
   todaySub: (label, wd) => `${label}, ${wd}`,

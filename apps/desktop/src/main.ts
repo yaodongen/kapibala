@@ -1,10 +1,10 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import type { TaskDraftIpc, VaultState } from '@kapibala/ipc'
+import type { TaskDraftIpc, Theme, VaultState } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -24,7 +24,7 @@ let quitting = false
  * 那个文件是和 CLI 共享的库注册表，别混进界面的东西。
  */
 const uiFile = () => `${env.userDataDir}/ui.json`
-type UiState = { lastTask?: Record<string, string>; lang?: Lang }
+type UiState = { lastTask?: Record<string, string>; lang?: Lang; theme?: Theme }
 function readUi(): UiState {
   try { return JSON.parse(readFileSync(uiFile(), 'utf8')) as UiState } catch { return {} }
 }
@@ -55,6 +55,28 @@ function lang(): Lang {
 }
 const S = () => t(lang())
 
+/**
+ * 界面主题。
+ *
+ * 偏好存在 ui.json 里（和语言一样，是本机状态，不进库目录、不跟着 iCloud 走）。
+ * 没存过 = 跟系统：把 nativeTheme.themeSource 设成 'system'，渲染进程那边的
+ * `prefers-color-scheme` 媒体查询自己会跟着变，不用给 HTML 塞 data-theme。
+ * 手动切过就以存下来的为准 —— 开关只有亮/暗两档，"跟系统"是没碰过开关时的默认。
+ */
+const isTheme = (x: unknown): x is Theme => x === 'light' || x === 'dark'
+function themePref(): Theme | 'system' {
+  const saved = readUi().theme
+  return isTheme(saved) ? saved : 'system'
+}
+/** 当前**生效**的亮/暗。跟系统时由 nativeTheme 解析 */
+const effectiveTheme = (): Theme => nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
+/** 窗口还没画出页面时的底色，跟 index.html 里的 --bg 对上，免得启动闪一下 */
+const windowBg = () => effectiveTheme() === 'dark' ? '#1e1e20' : '#f7eee0'
+
+function applyTheme() {
+  nativeTheme.themeSource = themePref()
+}
+
 const stateOf = (s: Store): VaultState => ({
   id: s.vault.entry.id,
   lastTask: readUi().lastTask?.[s.vault.entry.id],
@@ -74,6 +96,16 @@ function push() {
 function syncBusy(busy: boolean) {
   if (win && !win.isDestroyed()) win.webContents.send('sync:busy', busy)
 }
+
+/**
+ * 系统外观变了，或者我们自己刚改过 themeSource。渲染进程那边 CSS 靠
+ * `prefers-color-scheme` 自己就刷了，这里推的是**开关的状态**，外加窗口底色
+ * （页面还没画出来的那一帧才看得见）。
+ */
+nativeTheme.on('updated', () => {
+  win?.setBackgroundColor(windowBg())
+  if (win && !win.isDestroyed()) win.webContents.send('theme:changed', effectiveTheme())
+})
 
 /**
  * 同步目录里的文件可能处于中间状态，所以 300ms 防抖 + 忽略自己的目录
@@ -271,6 +303,15 @@ handle('ui:setLang', (next: Lang) => {
   return next
 })
 
+handle('ui:theme', () => effectiveTheme())
+handle('ui:setTheme', (next: Theme) => {
+  if (!isTheme(next)) throw new Error(`不认识的主题：${String(next)}`)
+  writeUi({ ...readUi(), theme: next })
+  applyTheme()                            // 生效后的 'updated' 事件会推给界面、顺便改窗口底色
+  log('info', '切换界面主题', { theme: next })
+  return next                             // 刚强制过，别去赌 shouldUseDarkColors 刷没刷新
+})
+
 handle('log:read', () => ({ text: readLog(), path: logPath() }))
 handle('log:copy', () => { clipboard.writeText(readLog()) })
 handle('log:reveal', () => { shell.showItemInFolder(logPath()) })
@@ -337,7 +378,8 @@ function createWindow() {
     // 备注栏常驻，默认宽度把它算进去了：216 侧栏 + 554 列表 + 340 备注
     width: 1110, height: 640, minWidth: 820, minHeight: 420,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#f7eee0',
+    // 跟着主题走：页面还没画出来时露的就是它，深色下不能是奶油色
+    backgroundColor: windowBg(),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
       contextIsolation: true,      // 渲染进程零 fs 权限，见 architecture.zh.md §5
@@ -378,6 +420,7 @@ function refreshDockMenu() {
 }
 
 app.whenReady().then(async () => {
+  applyTheme()          // 必须早于建窗口：晚了第一帧会先按系统默认色画一遍，再闪一下
   await boot()
   const w = createWindow()
   w.webContents.once('did-finish-load', async () => {

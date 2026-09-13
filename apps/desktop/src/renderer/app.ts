@@ -7,7 +7,7 @@ import type { Task } from '@kapibala/core'
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import type { Api, VaultState } from '@kapibala/ipc'
+import type { Api, Theme, VaultState } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -19,6 +19,8 @@ const kapi = window.kapi
  */
 let lang: Lang = 'zh'
 let S: Strings = dict('zh')
+/** 当前生效的亮/暗。配色是 CSS 的 prefers-color-scheme 在管，这个只喂开关 */
+let theme: Theme = 'light'
 
 const DAY = 86400000
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
@@ -204,6 +206,22 @@ function applyStatic() {
   document.documentElement.style.setProperty('--md-empty', JSON.stringify(S.notesEmpty))
   // 已完成列表最左边那一列的宽度：英文写 "11:58 PM"，比中文的 "23:58" 宽不少
   document.documentElement.style.setProperty('--doneat-w', lang === 'en' ? '56px' : '44px')
+  setThemeSwitch()
+}
+
+/**
+ * 主题开关的状态。配色由 CSS 的 prefers-color-scheme 自己切（主进程改
+ * nativeTheme.themeSource），这里只管滑块位置、aria 和提示语。
+ * 提示语写"点了会变成什么"，和语言按钮一个规矩。
+ */
+function setThemeSwitch() {
+  const dark = theme === 'dark'
+  const tip = dark ? S.themeToLight : S.themeToDark
+  document.querySelectorAll<HTMLElement>('[data-themesw]').forEach(el => {
+    el.setAttribute('aria-checked', String(dark))
+    el.title = tip
+    el.setAttribute('aria-label', tip)
+  })
 }
 
 /** 换语言不用重启窗口：文案都是 render() 时才取的 */
@@ -905,6 +923,16 @@ document.addEventListener('click', async (e) => {
   render()
 })
 
+/**
+ * 主题开关。点了就固定成另一档 —— 没碰过这个开关时是"跟系统"（主进程的默认），
+ * 碰过之后就不再跟系统了，和语言按钮一样存在 ui.json 里、不进库目录。
+ */
+document.addEventListener('click', async (e) => {
+  if (!(e.target as HTMLElement).closest('[data-themesw]')) return
+  theme = await kapi['ui:setTheme'](theme === 'dark' ? 'light' : 'dark')
+  setThemeSwitch()
+})
+
 // 渲染进程自己的报错也要进同一份日志，否则用户看到的日志里没有真正的原因
 window.addEventListener('error', (e) => {
   void kapi['log:renderer'](`${e.message} @ ${e.filename}:${e.lineno}`)
@@ -951,6 +979,8 @@ function showSync(on: boolean) {
 }
 
 kapi.onSyncBusy(showSync)
+// 系统外观变了（或别处改了 themeSource）：把开关挪过去。配色 CSS 自己会刷
+kapi.onThemeChanged((next) => { theme = next; setThemeSwitch() })
 kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
 kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
   selected = id
@@ -990,6 +1020,8 @@ $('pick').addEventListener('click', async () => {
 })
 
 async function boot() {
+  // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
+  theme = await kapi['ui:theme']()
   setLang(await kapi['ui:lang']())
   vault = await kapi['vault:state']()
   ready = true

@@ -28,6 +28,12 @@ export type TaskDraftIpc = {
   repeat?: RepeatRule
 }
 
+/**
+ * 界面主题。只有亮/暗两种 —— "跟系统"不是第三种取值，而是**没存过偏好**时的默认行为：
+ * 主进程据此把 nativeTheme.themeSource 设成 'system'。用户一点开关就固定下来。
+ */
+export type Theme = 'light' | 'dark'
+
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
 export type Commands = {
   'vault:state': () => VaultState
@@ -53,6 +59,10 @@ export type Commands = {
   /** 界面语言。默认跟系统走，改过就以改过的为准。同样是本机状态，不进库目录 */
   'ui:lang': () => Lang
   'ui:setLang': (lang: Lang) => Lang
+  /** 界面主题。没存过偏好就跟系统走，返回的是**当前生效**的亮/暗 */
+  'ui:theme': () => Theme
+  /** 手动固定成亮或暗（开关就这两个状态）。返回固定后生效的主题 */
+  'ui:setTheme': (theme: Theme) => Theme
   'log:read': () => { text: string; path: string }
   'log:copy': () => void
   'log:reveal': () => void
@@ -67,12 +77,15 @@ export type Events = {
   'task:show': (id: string) => void
   /** 正在读别的设备同步过来的改动。界面据此挡住编辑，读完自动放开 */
   'sync:busy': (busy: boolean) => void
+  /** 系统外观变了（或自己被 ui:setTheme 改了）。开关跟着挪，CSS 那边由媒体查询自己刷 */
+  'theme:changed': (theme: Theme) => void
 }
 
 export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
-  'ui:lastTask', 'ui:lang', 'ui:setLang', 'log:read', 'log:copy', 'log:reveal', 'log:renderer',
+  'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
+  'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 
 export type Api = {
@@ -81,4 +94,5 @@ export type Api = {
   onTasksChanged(cb: (tasks: Task[]) => void): void
   onShowTask(cb: (id: string) => void): void
   onSyncBusy(cb: (busy: boolean) => void): void
+  onThemeChanged(cb: (theme: Theme) => void): void
 }

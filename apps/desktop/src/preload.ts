@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CHANNELS } from '@kapibala/ipc'
+import { CHANNELS, type Theme } from '@kapibala/ipc'
 import type { Task } from '@kapibala/core'
 
 /** 渲染进程能碰到的全部东西就这些 */
@@ -17,6 +17,10 @@ api['onShowTask'] = ((cb: (id: string) => void) => {
 
 api['onSyncBusy'] = ((cb: (busy: boolean) => void) => {
   ipcRenderer.on('sync:busy', (_e, busy: boolean) => cb(busy))
+}) as never
+
+api['onThemeChanged'] = ((cb: (theme: Theme) => void) => {
+  ipcRenderer.on('theme:changed', (_e, theme: Theme) => cb(theme))
 }) as never
 
 contextBridge.exposeInMainWorld('kapi', api)
