@@ -14,6 +14,14 @@ const esc = (s: string) =>
 const SAFE_URL = /^(https?:\/\/|mailto:)/i
 /** 抠出行内代码时的占位符。用 NUL，用户输入里不可能有 */
 const TOK = '\u0000'
+/**
+ * 备注里的空行要占一行。
+ *
+ * 标准 Markdown 会把连续空行压成一个"段落间距"，但备注是随手记的纯文本：
+ * 用户按几下回车就是想留几行，压掉之后"按了回车却没反应"。所以每个空行都
+ * 落一个固定高度的空块，界面上的行数和源码里的回车数对得上。见 index.html 的 .mdblank
+ */
+const BLANK = '<div class="mdblank"></div>'
 
 function inline(src: string): string {
   const code: string[] = []
@@ -57,7 +65,7 @@ export function renderMarkdown(src: string): string {
     }
     if (/^```/.test(line)) { flushPara(); flushList(); fence = []; continue }
 
-    if (!line.trim()) { flushPara(); flushList(); continue }
+    if (!line.trim()) { flushPara(); flushList(); out.push(BLANK); continue }
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) { flushPara(); flushList(); out.push('<hr>'); continue }
 
     const h = /^(#{1,4})\s+(.*)$/.exec(line)
@@ -68,9 +76,18 @@ export function renderMarkdown(src: string): string {
       continue
     }
     const li = /^\s*[-*+]\s+(.*)$/.exec(line)
-    if (li) { flushPara(); openList('ul'); out.push(`<li>${inline(li[1]!)}</li>`); continue }
+    if (li) {
+      // 「- 」这种只有标记、没有内容的行，是旧备注里用来凑空行的写法（空行会被压掉，
+      // 用户只好拿一个空列表项顶上）。现在空行自己就能占一行，这里也照空行处理，
+      // 否则会留下一个没有高度、还带着圆点的空 li
+      if (!li[1]!.trim()) { flushPara(); flushList(); out.push(BLANK); continue }
+      flushPara(); openList('ul'); out.push(`<li>${inline(li[1]!)}</li>`); continue
+    }
     const oli = /^\s*\d+[.)]\s+(.*)$/.exec(line)
-    if (oli) { flushPara(); openList('ol'); out.push(`<li>${inline(oli[1]!)}</li>`); continue }
+    if (oli) {
+      if (!oli[1]!.trim()) { flushPara(); flushList(); out.push(BLANK); continue }
+      flushPara(); openList('ol'); out.push(`<li>${inline(oli[1]!)}</li>`); continue
+    }
     const quote = /^>\s?(.*)$/.exec(line)
     if (quote) { flushPara(); flushList(); out.push(`<blockquote>${inline(quote[1]!)}</blockquote>`); continue }
 

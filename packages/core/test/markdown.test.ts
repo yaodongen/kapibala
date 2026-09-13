@@ -27,8 +27,29 @@ describe('备注的 Markdown 渲染', () => {
     expect(renderMarkdown('```\n<b>x</b>\n```')).toBe('<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>')
   })
 
-  it('段落内换行变 br，空行分段', () => {
-    expect(renderMarkdown('一\n二\n\n三')).toBe('<p>一<br>二</p>\n<p>三</p>')
+  it('段落内换行变 br，空行占一行', () => {
+    expect(renderMarkdown('一\n二\n\n三')).toBe(
+      '<p>一<br>二</p>\n<div class="mdblank"></div>\n<p>三</p>')
+  })
+
+  it('几个回车就留几行空，首尾的空行也算数', () => {
+    // 备注是随手记的：按了三下回车，详情页就得空三行
+    expect(renderMarkdown('一段\n\n\n\n二段')).toBe(
+      '<p>一段</p>\n<div class="mdblank"></div>\n<div class="mdblank"></div>\n' +
+      '<div class="mdblank"></div>\n<p>二段</p>')
+    expect(renderMarkdown('\n\n你好\n')).toBe(
+      '<div class="mdblank"></div>\n<div class="mdblank"></div>\n<p>你好</p>\n<div class="mdblank"></div>')
+  })
+
+  it('只有标记没有内容的列表项按空行算，不留空圆点', () => {
+    expect(renderMarkdown('- a\n- \n- b')).toBe(
+      '<ul>\n<li>a</li>\n</ul>\n<div class="mdblank"></div>\n<ul>\n<li>b</li>\n</ul>')
+    expect(renderMarkdown('1. a\n2.  \n3. b')).toBe(
+      '<ol>\n<li>a</li>\n</ol>\n<div class="mdblank"></div>\n<ol>\n<li>b</li>\n</ol>')
+  })
+
+  it('代码块里的空行原样留在 pre 里，不变成空块', () => {
+    expect(renderMarkdown('```\na\n\nb\n```')).toBe('<pre><code>a\n\nb</code></pre>')
   })
 
   it('链接与裸链接', () => {

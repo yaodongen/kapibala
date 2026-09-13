@@ -179,7 +179,10 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .md:empty::before{ content:var(--md-empty, ''); color:var(--dim) }
 .md > :first-child{ margin-top:0 }
 .md > :last-child{ margin-bottom:0 }
-.md p{ margin:.35em 0 }
+/* 备注里的空行。高度正好一行 —— 源码里几个回车，详情页就留几行空
+   （段落之间靠它隔开，所以 p 自己不再留上下边距，否则空行会被撑成两倍） */
+.md .mdblank{ height:1.65em }
+.md p{ margin:0 }
 .md h3, .md h4, .md h5, .md h6{ font-size:12.5px; font-weight:600; margin:.7em 0 .3em }
 .md ul, .md ol{ margin:.35em 0; padding-left:1.3em }
 .md li{ margin:.15em 0 }
