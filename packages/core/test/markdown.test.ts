@@ -21,6 +21,23 @@ describe('备注的 Markdown 渲染', () => {
     expect(renderMarkdown('1. a\n2. b')).toBe('<ol>\n<li>a</li>\n<li>b</li>\n</ol>')
   })
 
+  it('任务清单画成勾选框，[x] 不当字面量', () => {
+    const cb = '<span class="mdcheck" aria-hidden="true"></span>'
+    expect(renderMarkdown('- [x] 0517 洗车\n- [ ] 0518 买菜')).toBe(
+      `<ul>\n<li class="mdtask mdchecked">${cb}0517 洗车</li>\n<li class="mdtask">${cb}0518 买菜</li>\n</ul>`)
+    // 大写 X、方括号后面没字，都算任务项
+    expect(renderMarkdown('- [X] 倒垃圾')).toBe(
+      `<ul>\n<li class="mdtask mdchecked">${cb}倒垃圾</li>\n</ul>`)
+    expect(renderMarkdown('- [ ]')).toBe(`<ul>\n<li class="mdtask">${cb}</li>\n</ul>`)
+    expect(renderMarkdown('1. [x] 有序也能勾')).toBe(
+      `<ol>\n<li class="mdtask mdchecked">${cb}有序也能勾</li>\n</ol>`)
+    // 只有空格 / x / X 才认，别的方括号照旧
+    expect(renderMarkdown('- [y] 不是任务')).toBe('<ul>\n<li>[y] 不是任务</li>\n</ul>')
+    // 任务项里的行内语法照常
+    expect(renderMarkdown('- [x] **加粗**')).toBe(
+      `<ul>\n<li class="mdtask mdchecked">${cb}<strong>加粗</strong></li>\n</ul>`)
+  })
+
   it('引用、分隔线、代码块', () => {
     expect(renderMarkdown('> 引用')).toBe('<blockquote>引用</blockquote>')
     expect(renderMarkdown('---')).toBe('<hr>')

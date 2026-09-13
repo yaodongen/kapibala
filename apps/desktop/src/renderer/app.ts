@@ -668,13 +668,21 @@ function focusCustom(id: string) {
 /**
  * 自定义天数落地。回车或失焦时读一次：填了合法数字就写 FREQ=DAILY;INTERVAL=N，
  * 没填就当作没选过，退回原来的规则（renderDetail / syncNewRepeat 会照原值重画）。
+ *
+ * 去处按**这个输入框长在哪**判断，不能看 customFor：详情栏那个框提交后不会马上消失
+ * （焦点还在里面，renderDetail 的 typingCustom 守卫会跳过 #dmeta 重建），用户看它没收起
+ * 再按一次回车时 customFor 已经是 null，一掉进下面的添加栏分支，就把"每 11 天"写成
+ * 新建任务的默认重复，之后每条新任务都带着它。
  */
 function commitCustomDays(el: HTMLInputElement) {
   const n = Math.floor(Number(el.value))
   const ok = Number.isFinite(n) && n >= 1 && n <= 999
-  const where = customFor
+  const detail = !!el.closest('#dmeta')
   customFor = null
-  if (where === 'detail') {
+  if (detail) {
+    // 先把焦点交出去，否则 renderDetail 仍以为正在这个框里打字、不重建 #dmeta ——
+    // 输入框会一直挂着，下拉也停在旧规则上看不到刚存的"每 N 天"
+    el.blur()
     if (ok && selected) void kapi['task:setField'](selected, 'repeat', { rrule: dailyEvery(n) })
     else renderDetail()
     return

@@ -186,6 +186,23 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .md h3, .md h4, .md h5, .md h6{ font-size:12.5px; font-weight:600; margin:.7em 0 .3em }
 .md ul, .md ol{ margin:.35em 0; padding-left:1.3em }
 .md li{ margin:.15em 0 }
+/* "- [x] 洗车" 这种任务清单：画成一个勾选框，而不是把 [x] 当字面量。只读展示 ——
+   点它仍然是进备注编辑（走 [data-noteview] 那套），所以不用真的 input。
+   对勾不用字形 ✓：各字体的基线和左右边距不一样，靠 line-height/text-align 只能居中行盒、
+   居中不了墨迹。改成 SVG 描出来做 mask，靠 background-position:center 居中，颜色取 --bg */
+.md li.mdtask{ list-style:none }
+.md li.mdtask .mdcheck{ position:relative; display:inline-flex; vertical-align:-2.5px; margin-right:6px;
+                        width:14px; height:14px; flex:none;
+                        border:1.5px solid color-mix(in srgb, var(--dim) 60%, transparent);
+                        border-radius:4.5px }
+.md li.mdtask.mdchecked{ color:var(--dim) }
+.md li.mdtask.mdchecked .mdcheck{ background:var(--accent); border-color:var(--accent) }
+.md li.mdtask.mdchecked .mdcheck::after{ content:''; position:absolute; inset:0;
+  background:var(--bg);
+  /* 10×10 的 viewBox 里墨迹正好居中（左右 0.9~9.1，上下 1.6~8.4），mask 居中铺 11px */
+  --tick:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2010%2010'%3E%3Cpath%20d='M1.9%205.3%204%207.4%208.1%202.6'%20fill='none'%20stroke='%23000'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask:var(--tick) center/11px 11px no-repeat;
+          mask:var(--tick) center/11px 11px no-repeat }
 .md code{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
           background:var(--row-hover); padding:1px 4px; border-radius:4px }
 .md pre{ background:var(--row-hover); padding:8px 10px; border-radius:7px; overflow-x:auto; margin:.45em 0 }

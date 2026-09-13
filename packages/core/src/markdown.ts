@@ -22,6 +22,20 @@ const TOK = '\u0000'
  * 落一个固定高度的空块，界面上的行数和源码里的回车数对得上。见 index.html 的 .mdblank
  */
 const BLANK = '<div class="mdblank"></div>'
+/**
+ * 备注里的任务清单：`- [x] 洗车` / `- [ ] 洗车`。x 大小写都认，
+ * 方括号后面没字也算（只画一个勾选框）。中间那个字符必须是空或 x/X，别的照普通列表项走
+ */
+const TASK_ITEM = /^\[([ xX])\](?:\s+(.*))?$/
+
+/** 列表项 → HTML。任务是勾选框 + 文本，别把 `[x]` 当普通字面量画出来 */
+function listItem(body: string): string {
+  const t = TASK_ITEM.exec(body)
+  if (!t) return `<li>${inline(body)}</li>`
+  const done = t[1] !== ' '
+  return `<li class="mdtask${done ? ' mdchecked' : ''}">` +
+    `<span class="mdcheck" aria-hidden="true"></span>${inline(t[2] ?? '')}</li>`
+}
 
 function inline(src: string): string {
   const code: string[] = []
@@ -81,12 +95,12 @@ export function renderMarkdown(src: string): string {
       // 用户只好拿一个空列表项顶上）。现在空行自己就能占一行，这里也照空行处理，
       // 否则会留下一个没有高度、还带着圆点的空 li
       if (!li[1]!.trim()) { flushPara(); flushList(); out.push(BLANK); continue }
-      flushPara(); openList('ul'); out.push(`<li>${inline(li[1]!)}</li>`); continue
+      flushPara(); openList('ul'); out.push(listItem(li[1]!)); continue
     }
     const oli = /^\s*\d+[.)]\s+(.*)$/.exec(line)
     if (oli) {
       if (!oli[1]!.trim()) { flushPara(); flushList(); out.push(BLANK); continue }
-      flushPara(); openList('ol'); out.push(`<li>${inline(oli[1]!)}</li>`); continue
+      flushPara(); openList('ol'); out.push(listItem(oli[1]!)); continue
     }
     const quote = /^>\s?(.*)$/.exec(line)
     if (quote) { flushPara(); flushList(); out.push(`<blockquote>${inline(quote[1]!)}</blockquote>`); continue }
