@@ -1,0 +1,88 @@
+# Changelog · 更新日志
+
+All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
+
+## 1.6.1 — 2026-09-13
+
+- Fixed the note preview in the list crawling upwards line by line while scrolling (browser scroll anchoring miscalculated on a full re-render; the list now anchors the topmost visible task itself and `.list` sets `overflow-anchor: none`).
+- 修好点列表里的备注预览会一行行往上跑（整块重建时浏览器 scroll anchoring 算歪锚点，改成自己锚住视口最上面那条任务并关掉 `.list` 的 `overflow-anchor`）。
+
+## 1.6.0 — 2026-09-13
+
+- Added a dark mode that follows your Mac until you touch the theme switch, then sticks to your choice in `ui.json`; the toggle sits at the top right of the list, and the theme is decided before the window is created so the first frame never flashes.
+- 支持夜间模式，没碰过开关就跟系统、切过就固定并存进 `ui.json`；主题开关放在列表页右上角，建窗口前先定好主题免得第一帧闪。
+
+## 1.5.3 — 2026-09-13
+
+- Notes in the detail pane now support `- [x]` checklists with centred checkboxes, and changing the repeat days in the detail pane no longer leaks into the default repeat of newly created tasks.
+- 详情页备注支持 `- [x]` 任务清单（勾选框居中）；修好详情页改重复天数会串成新建任务的默认重复。
+
+## 1.5.2 — 2026-09-13
+
+- Blank lines in detail-pane notes are preserved — press Enter five times and you keep five lines — and an empty list item also counts as a blank line.
+- 详情页备注的空行不再被压掉，按几个回车就留几行；空列表项也按空行算。
+
+## 1.5.1 — 2026-09-13
+
+- The Completed view groups by the day you finished a task with the time of day on the left of each row, and titles in the list are no longer struck through.
+- 已完成列表按完成日期分组、行首显示完成时间，列表里的标题不再划删除线。
+
+## 1.5.0 — 2026-09-11
+
+- The calendar and repeat dropdown in the detail pane open on the first click, and the detail pane follows along after a task is created.
+- 详情栏的日历和周期下拉第一下点不开；新建任务后详情栏跟着切过去。
+
+## 1.4.3 — 2026-09-08
+
+- Clicking into the notes now closes any in-progress title edit first, so the first click types.
+- 点备注要先关掉正在编辑的标题，否则第一下打不了字。
+
+## 1.4.2 — 2026-09-06
+
+- Fixed the Dock icon looking a size too big because the artwork filled the whole canvas.
+- 修好 Dock 图标铺满画布显得比系统应用大一圈。
+
+## 1.4.1 — 2026-09-04
+
+- The app opens on "Next 7 days", and clicking a second time no longer drops you out of title editing.
+- 打开默认停在"最近 7 天"；点第二下不再退出改标题。
+
+## 1.4.0 — 2026-09-02
+
+- Reading another device's changes now shows a cover that lifts by itself once the read finishes.
+- 读别的设备的改动时盖一层挡板，读完自动收。
+
+## 1.3.2 — 2026-08-30
+
+- Added a "last day of every month" repeat preset, and shortened the fade-out after completing a task from 1 second to 450 ms.
+- 重复预设加一条"每月最后一天"；勾完的淡出从 1 秒缩到 450ms。
+
+## 1.3.1 — 2026-08-30
+
+- Click anywhere in the notes and the caret lands right there, and clicking a link no longer navigates the app away.
+- 点备注哪里，光标就停在哪里；修好点链接会把应用导航走。
+
+## 1.3.0 — 2026-08-29
+
+- Custom repeat intervals in days, auto-save, overdue tasks showing their original date, and a fade-out on completion.
+- 自定义重复天数、自动保存、逾期显示原日期、勾完淡出。
+
+## 1.2.1 — 2026-08-28
+
+- One click on the circle in the list completes the task.
+- 列表里点一下圆圈就能完成任务。
+
+## 1.2.0 — 2026-08-27
+
+- Closing the window only tucks the app away instead of quitting, the trash empties in one click, a Next 30 days view, and the repeat label moved to the end of the row.
+- 关窗口只收起来，不退出应用；垃圾桶一键清空、最近 30 天视图、重复标签挪到行末。
+
+## 1.1.0 — 2026-08-26
+
+- The interface speaks English and Chinese.
+- 界面支持中英文。
+
+## 1.0.0 — 2026-08-26
+
+- First release: full RRULE repeats, search across titles and notes, and an English version of the docs.
+- 第一个正式版：完整的 RRULE、搜索、文档英文版。
