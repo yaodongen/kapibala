@@ -7,7 +7,7 @@ import type { Task } from '@kapibala/core'
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import type { Api, Theme, VaultState } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, type Api, type Theme, type VaultState } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -120,6 +120,30 @@ function linger(id: string) {
   leaving.set(id, setTimeout(() => { leaving.delete(id); wasDoneAt.delete(id); render() }, LINGER))
 }
 
+/**
+ * 勾选 / 取消勾选。完成必须在 mousedown 里就发出去（理由见文件头那段），
+ * 所以这里只管写命令，不管是谁触发的。
+ *
+ * 周期任务完成后存储层会派生下一个实例。列表里刚完成的那条要淡出 LINGER 毫秒才消失，
+ * 详情栏也等它消失之后再跟过去 —— 一勾就跳走的话，"到底勾上没有"反而看不清。
+ */
+async function setDone(id: string, done: boolean) {
+  linger(id)
+  if (!done) { await kapi['task:uncomplete'](id); return }
+  const next = await kapi['task:complete'](id)
+  if (!next) return
+  setTimeout(() => {
+    // 这 LINGER 毫秒里用户可能自己选了别的任务、或者又把这条点回未完成 —— 那就不切。
+    // 下一个实例还没进 tasks（tasks:changed 慢了一拍）也先不切，别把详情栏甩空
+    if (selected !== id) return
+    if (!tasks.find(t => t.id === id)?.completedAt) return
+    if (!tasks.some(t => t.id === next)) return
+    selected = next
+    remember(next)
+    render()
+  }, LINGER)
+}
+
 const alive = () => tasks.filter(t => !t.deleted)
 const undone = () => alive().filter(t => !t.completedAt || leaving.has(t.id))
 /** 这条任务算"什么时候完成的"：正在淡出的那条 completedAt 已经空了，退回记下来的旧值 */
@@ -202,6 +226,10 @@ function applyStatic() {
   ;($('newTitle') as HTMLInputElement).placeholder = S.addPlaceholder
   ;($('dtitle') as HTMLInputElement).placeholder = S.titlePlaceholder
   document.querySelectorAll<HTMLElement>('[data-lang]').forEach(el => { el.title = S.langSwitchTip })
+  // 详情栏分隔线的提示写"它能干什么"，和语言/主题按钮一个规矩
+  const sep = $('dresize')
+  sep.title = S.detailResizeTip
+  sep.setAttribute('aria-label', S.detailResizeTip)
   // 空备注的占位文字在 CSS 的 ::before 里，只能靠变量递进去
   document.documentElement.style.setProperty('--md-empty', JSON.stringify(S.notesEmpty))
   // 已完成列表最左边那一列的宽度：英文写 "11:58 PM"，比中文的 "23:58" 宽不少
@@ -461,6 +489,69 @@ function renderDetail() {
 }
 
 /**
+ * 详情栏宽度。拖列表和详情栏之间那条分隔线来改，双击恢复默认。
+ * 存进 ui.json —— 和语言、主题一样是本机的界面偏好，不进库目录、不跟着 iCloud 同步。
+ */
+const DETAIL_MIN_W = 260
+let detailW = DEFAULT_DETAIL_WIDTH
+/** 列表区至少留这么宽。窗口再窄也不能让详情栏把任务列表压没 */
+const MAIN_MIN_W = 320
+/** 侧边栏宽度，和 index.html 里 .app 的第一列（216px）对齐 —— 改一边要改两边 */
+const SIDEBAR_W = 216
+/** 夹一次：最小 260；最大不超过窗口的 60%，同时给列表区留够 320 */
+function clampDetailW(w: number): number {
+  const max = Math.max(DETAIL_MIN_W, Math.min(window.innerWidth * 0.6, window.innerWidth - SIDEBAR_W - MAIN_MIN_W))
+  return Math.round(Math.max(DETAIL_MIN_W, Math.min(w, max)))
+}
+/**
+ * 只改 CSS 变量、按**当前**窗口再夹一次。窗口被拖窄时不能让详情栏把列表挤没，
+ * 但 detailW 本身不动 —— 窗口再放大回去，宽度还是用户当初拖的那个。
+ */
+function applyDetailW() {
+  document.documentElement.style.setProperty('--detail-w', `${clampDetailW(detailW)}px`)
+}
+
+const resizeBar = $('dresize')
+/** 拖动起点：鼠标 x、当时详情栏**显示**的宽度、以及拖之前的逻辑宽度 */
+let resizeFrom: { x: number; w: number; w0: number } | null = null
+
+resizeBar.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return
+  e.preventDefault()      // 别让这次按下顺手选中文字、把焦点挪走
+  resizeFrom = { x: e.clientX, w: $('detail').getBoundingClientRect().width, w0: detailW }
+  resizeBar.classList.add('on')
+  document.body.classList.add('resizing')
+  // 捕获指针：拖到窗口外面松手也收得到 pointerup。合成的 PointerEvent（探针）没有真实
+  // 指针，捕获会抛 —— 忽略即可，监听挂在 document 上一样收得到
+  try { resizeBar.setPointerCapture(e.pointerId) } catch { /* 没有真实指针 */ }
+})
+document.addEventListener('pointermove', (e) => {
+  if (!resizeFrom) return
+  detailW = clampDetailW(resizeFrom.w - (e.clientX - resizeFrom.x))
+  applyDetailW()
+})
+document.addEventListener('pointerup', endResize)
+document.addEventListener('pointercancel', endResize)
+function endResize(e: PointerEvent) {
+  const from = resizeFrom
+  if (!from) return
+  resizeFrom = null
+  resizeBar.classList.remove('on')
+  document.body.classList.remove('resizing')
+  try { resizeBar.releasePointerCapture(e.pointerId) } catch { /* 见上 */ }
+  // 拖了半天又拖回原位就不用写盘了。ui.json 是整份重写，没必要那么勤快
+  if (detailW !== from.w0) void kapi['ui:setDetailWidth'](detailW)
+}
+/** 双击恢复默认宽度 */
+resizeBar.addEventListener('dblclick', () => {
+  detailW = DEFAULT_DETAIL_WIDTH
+  applyDetailW()
+  void kapi['ui:setDetailWidth'](detailW)
+})
+// 窗口变小了也要再夹一次，否则详情栏会把列表压没
+window.addEventListener('resize', applyDetailW)
+
+/**
  * 圆圈的完成/取消完成在 mousedown 就执行，不等 click。
  *
  * 因为 mousedown 会把焦点从就地编辑的输入框里挪走 → focusout → 保存 → render()，
@@ -506,8 +597,7 @@ document.addEventListener('mousedown', (e) => {
   if (btn) {
     const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete'
     const id = btn.dataset['id']!
-    if (act === 'task:complete' || act === 'task:uncomplete') linger(id)
-    void kapi[act](id)
+    if (act === 'task:complete' || act === 'task:uncomplete') void setDone(id, act === 'task:complete')
     actedOnMousedown = true
     return
   }
@@ -620,7 +710,7 @@ document.addEventListener('click', async (e) => {
   const btn = target.closest<HTMLElement>('[data-act]')
   if (!btn) return
   const act = btn.dataset['act'] as 'task:complete' | 'task:uncomplete' | 'task:trash' | 'task:restore'
-  if (act === 'task:complete' || act === 'task:uncomplete') linger(btn.dataset['id']!)
+  if (act === 'task:complete' || act === 'task:uncomplete') { await setDone(btn.dataset['id']!, act === 'task:complete'); return }
   await kapi[act](btn.dataset['id']!)
 })
 
@@ -1053,6 +1143,9 @@ $('pick').addEventListener('click', async () => {
 })
 
 async function boot() {
+  // 先把上次拖的详情栏宽度装上，省得第一帧按默认 340 画一遍再跳
+  detailW = await kapi['ui:detailWidth']()
+  applyDetailW()
   // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
   theme = await kapi['ui:theme']()
   setLang(await kapi['ui:lang']())

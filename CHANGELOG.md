@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.7.0 — 2026-09-15
+
+- Finishing a recurring task now moves the detail pane on to the next occurrence once the finished one has faded out of the list, and the divider between the list and the detail pane can be dragged to widen it — the width is remembered in `ui.json`.
+- 完成周期任务后，列表里那条淡出、详情栏自动跟到下一个周期；列表和详情栏之间的分隔线可以拖动加宽，宽度记进 `ui.json`。
+
 ## 1.6.1 — 2026-09-13
 
 - Fixed the note preview in the list crawling upwards line by line while scrolling (browser scroll anchoring miscalculated on a full re-render; the list now anchors the topmost visible task itself and `.list` sets `overflow-anchor: none`).

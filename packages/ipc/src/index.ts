@@ -34,6 +34,12 @@ export type TaskDraftIpc = {
  */
 export type Theme = 'light' | 'dark'
 
+/**
+ * 详情栏的默认宽度。三处都要它：CSS 的 `var(--detail-w, …)`、渲染进程的初始值、
+ * 主进程读到空偏好时的兜底 —— 写三份迟早会对不上，放这儿共享。
+ */
+export const DEFAULT_DETAIL_WIDTH = 340
+
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
 export type Commands = {
   'vault:state': () => VaultState
@@ -46,7 +52,9 @@ export type Commands = {
   'task:list': () => Task[]
   'task:create': (draft: TaskDraftIpc) => string
   'task:setField': (id: string, field: string, val: unknown) => void
-  'task:complete': (id: string) => void
+  /** 完成。周期任务会派生下一个实例，返回它的 id（不重复、或系列已结束就是 null），
+   *  界面据此把详情栏跟过去 */
+  'task:complete': (id: string) => string | null
   'task:uncomplete': (id: string) => void
   'task:trash': (id: string) => void
   'task:restore': (id: string) => void
@@ -63,6 +71,10 @@ export type Commands = {
   'ui:theme': () => Theme
   /** 手动固定成亮或暗（开关就这两个状态）。返回固定后生效的主题 */
   'ui:setTheme': (theme: Theme) => Theme
+  /** 详情栏宽度（像素）。和语言、主题一样是本机的界面偏好，不进库目录、不跟 iCloud 走 */
+  'ui:detailWidth': () => number
+  /** 记下拖动后的详情栏宽度。返回实际存进去的值 */
+  'ui:setDetailWidth': (width: number) => number
   'log:read': () => { text: string; path: string }
   'log:copy': () => void
   'log:reveal': () => void
@@ -85,6 +97,7 @@ export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
+  'ui:detailWidth', 'ui:setDetailWidth',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 

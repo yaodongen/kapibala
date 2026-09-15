@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import type { TaskDraftIpc, Theme, VaultState } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, type TaskDraftIpc, type Theme, type VaultState } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -24,7 +24,7 @@ let quitting = false
  * 那个文件是和 CLI 共享的库注册表，别混进界面的东西。
  */
 const uiFile = () => `${env.userDataDir}/ui.json`
-type UiState = { lastTask?: Record<string, string>; lang?: Lang; theme?: Theme }
+type UiState = { lastTask?: Record<string, string>; lang?: Lang; theme?: Theme; detailWidth?: number }
 function readUi(): UiState {
   try { return JSON.parse(readFileSync(uiFile(), 'utf8')) as UiState } catch { return {} }
 }
@@ -312,6 +312,17 @@ handle('ui:setTheme', (next: Theme) => {
   return next                             // 刚强制过，别去赌 shouldUseDarkColors 刷没刷新
 })
 
+handle('ui:detailWidth', () => readUi().detailWidth ?? DEFAULT_DETAIL_WIDTH)
+handle('ui:setDetailWidth', (w: number) => {
+  const n = Math.round(Number(w))
+  if (!Number.isFinite(n)) throw new Error(`不认识的详情栏宽度：${String(w)}`)
+  // 渲染进程拖的时候已经夹过一次（最小 260、最大不超过窗口的 60%）。这里只兜个底：
+  // 脏值一旦写进 ui.json，下次启动就会拿它当初始宽度，那比这一次拖歪更难受
+  const width = Math.min(2000, Math.max(200, n))
+  writeUi({ ...readUi(), detailWidth: width })
+  return width
+})
+
 handle('log:read', () => ({ text: readLog(), path: logPath() }))
 handle('log:copy', () => { clipboard.writeText(readLog()) })
 handle('log:reveal', () => { shell.showItemInFolder(logPath()) })
@@ -322,7 +333,7 @@ handle('vault:pick', async () => { const s = await pickVault(); return s ? state
 handle('task:list', (): Task[] => store?.tasks() ?? [])
 handle('task:create', (d: TaskDraftIpc) => write(s => s.add(d)))
 handle('task:setField', (id: string, f: string, v: unknown) => write(s => s.setField(id, f, v)))
-handle('task:complete', (id: string) => write(s => s.complete(id).then(() => undefined)))
+handle('task:complete', (id: string) => write(s => s.complete(id).then(next => next?.id ?? null)))
 handle('task:uncomplete', (id: string) => write(s => s.uncomplete(id)))
 handle('task:trash', (id: string) => write(s => s.trash(id)))
 handle('task:restore', (id: string) => write(s => s.restore(id)))

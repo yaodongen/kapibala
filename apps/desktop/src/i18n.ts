@@ -88,6 +88,8 @@ const ZH = {
   notesNoSelection: '选中一个任务，在这里写备注。<br>支持 Markdown。',
   notesEditPlaceholder: '支持 Markdown：**粗体** *斜体* `代码` - 列表 [链接](https://…)',
   notesHint: '自动保存 · ⌘↩ 收起',
+  /** 左边缘那条可拖动的分隔线 */
+  detailResizeTip: '拖动调整宽度，双击恢复默认',
 
   // ── 提示条 ──
   bannerReadOnly: '这个库的格式比当前版本新，已按只读打开',
@@ -203,6 +205,7 @@ const EN: typeof ZH = {
   notesNoSelection: 'Select a task to write a note here.<br>Markdown supported.',
   notesEditPlaceholder: 'Markdown: **bold** *italic* `code` - list [link](https://…)',
   notesHint: 'Saved automatically · ⌘↩ to close',
+  detailResizeTip: 'Drag to resize, double-click to reset',
 
   bannerReadOnly: 'This vault was written by a newer version, so it is open read-only',
   bannerForked: 'This device folder belongs to another Mac (the vault was copied or migrated), so a new device identity is in use',

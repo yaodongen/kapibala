@@ -34,7 +34,9 @@ body{
   color:var(--text); background:var(--bg); height:100vh; overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
-.app{display:grid; grid-template-columns:216px 1fr 340px; height:100vh}   /* 备注栏常驻 */
+/* 三栏：侧边栏 / 列表 / 详情栏。详情栏宽度由 --detail-w 决定（app.ts 拖动时改它，
+   初始值从 ui.json 读；这里给 340 只是页面画出来到 boot() 之间那一小会儿的兜底） */
+.app{position:relative; display:grid; grid-template-columns:216px 1fr var(--detail-w,340px); height:100vh}
 
 /* ── 侧边栏 ── */
 .sidebar{
@@ -160,6 +162,17 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 /* ── 右侧详情栏 ── */
 .detailpane{ border-left:1px solid var(--border); display:flex; flex-direction:column;
              overflow:hidden; background:var(--bg); padding-top:34px; position:relative }
+/* 详情栏左边缘的拖动条：看着还是那条 1px 分隔线，热区放宽到 7px、骑在线上。
+   必须是 .app 的子元素、不能挂在 .detailpane 里 —— 那个框有 overflow:hidden，
+   往左伸出去的部分会被裁掉。z-index 要高过 .titlebar(50)，否则顶上 34px 拖的是窗口 */
+.dresize{ position:absolute; top:0; bottom:0; width:7px; z-index:55;
+          left:calc(100% - var(--detail-w,340px) - 3px);
+          cursor:col-resize; -webkit-app-region:no-drag; app-region:no-drag }
+.dresize::after{ content:''; position:absolute; left:3px; top:0; bottom:0; width:1px;
+                 background:transparent; transition:background .12s ease }
+.dresize:hover::after, .dresize.on::after{ background:var(--accent) }
+/* 拖动中整窗都是左右箭头，鼠标滑多快都不会在别处变回箭头 */
+body.resizing, body.resizing *{ cursor:col-resize !important }
 .dhead{ display:flex; align-items:flex-start; gap:8px; padding:8px 16px 10px }
 /* 标题就地可编辑：外观仍是标题，不做成一眼就是输入框的样子 */
 .dhead .t{ font-size:14.5px; font-weight:600; line-height:1.4; width:100%; padding:0; margin:0;
@@ -418,6 +431,9 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
     </div>
     <div class="list" id="list"></div>
   </main>
+
+  <!-- 列表和详情栏之间那条分隔线：左右拖动改详情栏宽度，双击恢复默认 -->
+  <div class="dresize" id="dresize" role="separator" aria-orientation="vertical"></div>
 
   <aside class="detailpane" id="detail">
     <div class="dhead">
