@@ -75,6 +75,8 @@ Because no file is ever written by two Macs, the classic synced-folder failure â
 - **Drag to reschedule**: in a calendar view, drag a task from one day to another â€” the time of day stays
 - **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, and **every N days** (type 17, say)
 - One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
+- **In progress**: mark a task from the right-click menu and its row lights up with a "Doing" badge;
+  several tasks can be in progress at once, and completing or trashing one clears it
 - **Search** across titles and notes; space-separated words all have to match
 
 **Views**

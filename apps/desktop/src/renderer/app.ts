@@ -509,6 +509,7 @@ function row(t: Task, doneList = false): string {
     ? (t.notes?.trim() ? matchContext(t, query, 46) : '')
     : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
   return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
+               t.inProgress ? 'doing' : ''} ${
                leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
     ${doneList
       // 已完成列表：整行最左边是"几点几分完成的"，日期在分组标题上。
@@ -521,7 +522,8 @@ function row(t: Task, doneList = false): string {
       : `<div class="title">${esc(t.title)}</div>`}${
       first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>${
     time ? `<div class="when">${time}</div>` : ''}${
-    rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}
+    rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}${
+    t.inProgress ? `<span class="tag doing" title="${esc(S.inProgress)}">${esc(S.inProgress)}</span>` : ''}
   </div>`
 }
 
@@ -556,13 +558,17 @@ function calRow(t: Task, overdue: boolean): string {
     ? `<div class="calmeta">${when ? `<span>${esc(when)}</span>` : ''}${
         rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}</div>`
     : ''
+  // 进行中：徽标钉在格子右上角，标题给它让出宽度（见 index.html 的 .calrow .tag.doing）。
+  // 标题带 title：装不下时被截成一行加省略号，悬浮还能看全
+  const prog = t.inProgress ? `<span class="tag doing">${esc(S.inProgress)}</span>` : ''
   return `<div class="task calrow ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
+               t.inProgress ? 'doing' : ''} ${
                leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
-            data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
-    <div class="body">${titleEditing === t.id
+            data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>${
+    prog}<div class="body">${titleEditing === t.id
       ? `<input class="titleedit" data-titleedit="${t.id}" value="${esc(t.title)}">`
-      : `<div class="title">${esc(t.title)}</div>`}${meta}</div>
+      : `<div class="title" title="${esc(t.title)}">${esc(t.title)}</div>`}${meta}</div>
   </div>`
 }
 

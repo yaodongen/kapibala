@@ -316,6 +316,8 @@ handle('task:menu', (id: string) => {
     : [
         { label: L.menuNotes, click: () => win?.webContents.send('task:show', id) },
         { type: 'separator' },
+        { label: t.inProgress ? L.unmarkInProgress : L.inProgress,
+          click: () => void write(s => s.setField(id, 'inProgress', !t.inProgress)) },
         { label: t.completedAt ? L.menuUncomplete : L.menuComplete,
           click: () => void write(s => (t.completedAt ? s.uncomplete(id) : s.complete(id).then(() => undefined))) },
         { type: 'separator' },

@@ -57,6 +57,13 @@ const ZH = {
 
   // ── 列表 ──
   addPlaceholder: '添加任务，回车保存',
+  /**
+   * 进行中任务行上那个徽标。中英文都用 "Doing" —— 列表行很窄，这个位置
+   * 放三个字（"进行中"）比放五个字母还占地方，用一个词更清爽。
+   * 它只是徽标，右键菜单里仍然是中文的"进行中 / 取消进行中"
+   */
+  inProgress: 'Doing',
+  unmarkInProgress: '取消进行中',
   noRepeat: '不重复',
   repeatCustom: '自定义天数…',
   customEvery: '每',
@@ -180,6 +187,8 @@ const EN: typeof ZH = {
   trashSub: 'Right-click to restore or delete for good',
 
   addPlaceholder: 'Add a task, press ⏎',
+  inProgress: 'Doing',
+  unmarkInProgress: 'Clear in progress',
   noRepeat: 'No repeat',
   repeatCustom: 'Every N days…',
   customEvery: 'Every',

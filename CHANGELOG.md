@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.7.2 — 2026-09-25
+
+- Added an "in progress" mark: right-click a task to set it, and its row lights up in the list with a `Doing` badge until you complete or trash the task; calendar rows now keep the title on one line with an ellipsis (the full title is in the tooltip), cells in a row share the same height, and an in-progress task shows its `Doing` badge in the top-right corner of its cell.
+- 新增「进行中」标记：右键任务即可标记，列表里那一行会高亮并带上 `Doing` 徽标，勾完成或删进垃圾桶时自动取消；日历里的标题改成一行加省略号（全文在悬浮提示里），同一行的格子高度对齐，进行中的任务在格子右上角显示 `Doing` 徽标。
+
 ## 1.7.1 — 2026-09-25
 
 - Added two tiled calendar views (7d and 14d) that lay the days out as cells with overdue in its own cell, and you can drag a task from one day to another to reschedule it; the bottom-left corner now shows the version number (clicking it opens the log), and window size is remembered separately for each calendar view.

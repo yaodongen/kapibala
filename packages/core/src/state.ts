@@ -47,6 +47,8 @@ export function materialize(id: string, f: Fields): Task {
     reminders: Array.isArray(f['reminders']?.val) ? (f['reminders']!.val as Task['reminders']) : [],
     repeat: (f['repeat']?.val as Task['repeat']) ?? undefined,
     order: str(f['order']) ?? '',
+    // 明写 true 才算"进行中"。老数据里没有这个字段，那就是没在进行中
+    inProgress: f['inProgress']?.val === true,
     completedAt: num(f['completedAt']),
     createdAt: num(f['createdAt']) ?? 0,
     seriesId: str(f['seriesId']),

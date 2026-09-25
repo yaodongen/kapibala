@@ -89,6 +89,62 @@ describe('周期任务', () => {
   })
 })
 
+describe('进行中', () => {
+  it('标记和取消标记', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '写方案' })
+    expect(s.task(id)!.inProgress).toBe(false)      // 建出来默认不在进行中
+
+    await s.setField(id, 'inProgress', true)
+    expect(s.task(id)!.inProgress).toBe(true)
+
+    await s.setField(id, 'inProgress', false)
+    expect(s.task(id)!.inProgress).toBe(false)
+  })
+
+  it('同时可以有好几条进行中', async () => {
+    const { s } = await setup()
+    const a = await s.add({ title: '一' })
+    const b = await s.add({ title: '二' })
+    await s.setField(a, 'inProgress', true)
+    await s.setField(b, 'inProgress', true)
+    expect(s.tasks().filter(t => t.inProgress)).toHaveLength(2)
+  })
+
+  it('完成后自动清掉进行中的标记', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '写方案' })
+    await s.setField(id, 'inProgress', true)
+    await s.complete(id)
+    expect(s.task(id)!.completedAt).toBeGreaterThan(0)
+    expect(s.task(id)!.inProgress).toBe(false)
+  })
+
+  it('删进垃圾桶时自动清掉进行中的标记，恢复后也不会自己回来', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '写方案' })
+    await s.setField(id, 'inProgress', true)
+    await s.trash(id)
+    expect(s.task(id)!.inProgress).toBe(false)
+    await s.restore(id)
+    expect(s.task(id)!.inProgress).toBe(false)
+  })
+
+  it('多设备合并：进行中的标记跟着字段级 LWW 走', async () => {
+    const fs = new MemFs()
+    const a = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua' }), V, true)
+    const id = await a.add({ title: '写方案' })
+    const b = await Store.open(memEnv({ fs, machineId: 'MACHINE-B', userDataDir: '/ub' }), V)
+
+    await a.setField(id, 'inProgress', true)      // A 开始做
+    await b.refresh()
+    expect(b.task(id)!.inProgress).toBe(true)
+
+    await a.refresh()
+    expect(a.task(id)!.inProgress).toBe(true)
+  })
+})
+
 describe('多设备合并', () => {
   it('各写各的目录，改动都能看到', async () => {
     const fs = new MemFs()

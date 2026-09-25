@@ -1,6 +1,9 @@
 node_modules/
 tsconfig.tsbuildinfo
 
+# pnpm 留在仓库根下的包缓存（换机器或换 pnpm 版本会自己重建，不该进仓库）
+.pnpm-store/
+
 # 构建产物
 apps/desktop/dist/
 apps/desktop/release/

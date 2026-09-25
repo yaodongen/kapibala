@@ -104,7 +104,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
    窗口窄了每格就窄一点，不横向滚；行放不下就整块上下滚。
    底部留半屏空白：最后一行才能滚到窗口中间来看，而不是贴在最底下 */
 .list.cal{ display:grid; grid-template-columns:repeat(var(--cal-cols, 4), minmax(0, 1fr));
-           gap:16px 14px; align-content:start; align-items:start;
+           gap:16px 14px; align-content:start; align-items:stretch;
            padding:12px 20px 50vh; overflow:auto }
 .calcell{ min-width:0; display:flex; flex-direction:column; gap:1px }
 .calhead{
@@ -138,8 +138,26 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important }
   box-shadow:var(--shadow); color:var(--text); font-size:12px;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-/* 格子里的行更窄：时间和重复标签挪到标题下面一行，不跟标题抢宽度 */
-.calrow{ padding:5px 8px; margin:0; gap:8px }
+/* 格子里的行更窄：时间和重复标签挪到标题下面一行，不跟标题抢宽度。
+   注意：布局（padding/margin/gap/position）写在下面 .task 那条规则**之后**，
+   因为它俩同优先级（都是单个类），谁后出现谁说了算 —— 写在这儿会被 .task 压掉 */
+/* 格子只有七十几到一百来像素宽，标题必须一行放完：折行会把格子撑成三四倍高，
+   同一行里的格子高矮差一大截，整块日历看着就散了。放不下就用…收尾，
+   全文在 title 里，悬浮还是看得到（见 app.ts 的 calRow）。
+   min-width:0 不能省：flex 项默认 min-width:auto，不加它省略号不会生效，
+   内容照样把盒子撑开、照样折行 */
+.calrow .body{ min-width:0 }
+.calrow .title{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+/* 进行中的徽标在日历里钉在格子右上角，**绝对定位**脱离文档流：
+   一行里塞不下「标题 + 徽标」，硬塞的结果就是刚才那种折行。钉在角上以后，
+   标题照旧一行省略号，且给它让出徽标的宽度（下面 .calrow.doing .title）——
+   不让宽度的话省略号算不到被盖住的那一截，看着像平白少了一行。
+   top 是按「和标题那一行居中对齐」算出来的：行内上 padding 5px，标题行高
+   1.65×13.5 ≈ 20px，中线在 5+10 = 15px；徽标高 15px，它自己的中线在
+   top+7.5，所以 top = 7.5（取 8px）。改字号或行内边距时这个数要跟着动 */
+.calrow .tag.doing{ position:absolute; top:8px; right:2px; margin:0;
+                    padding:0 3px; font-size:10px; z-index:1; pointer-events:none }
+.calrow.doing .title{ padding-right:38px }
 .calmeta{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px;
           font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums }
 .calmeta .tag.rep{ margin:0; padding:0 4px; font-size:10.5px }
@@ -158,6 +176,10 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important }
   display:flex; align-items:flex-start; gap:10px; padding:7px 8px;
   border-radius:7px; margin:0 -8px;
 }
+/* 日历格子里的行更窄：上下内边距和内间距都收一点，margin 归零（行不往两侧出血）。
+   必须写在 .task **之后** —— 同优先级下后出现的赢，写在上面会被 .task 压回去；
+   position:relative 是给进行中的徽标当定位基准（见 .calrow .tag.doing） */
+.calrow{ padding:5px 8px; margin:0; gap:8px; position:relative }
 .task:hover{background:var(--row-hover)}
 /* 勾完先停一下再消失：前段维持原样（看清勾上了），后段淡出。
    时长由 app.ts 的 LINGER 写进 --linger，两边不会各走各的 */
@@ -204,6 +226,22 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important }
 }
 /* 重复标签贴在整行最右边，和时间一起构成右侧那一列 */
 .tag.rep{ flex:none; margin-left:8px; margin-top:1px; white-space:nowrap }
+/* 进行中的徽标：贴在重复标签右边（没有重复标签时它自己带左边距，见下）
+   用实心底色，和浅底的重复标签区分开 */
+.tag.doing{ flex:none; margin-left:8px; margin-top:1px; white-space:nowrap;
+            background:var(--accent); color:var(--on-accent) }
+.tag.rep + .tag.doing{ margin-left:4px }
+
+/* ── 进行中：整行高亮 ──
+   左侧一道强调色 + 淡色底。底色用 box-shadow 的 inset 而不是 border-left：
+   行的上下 padding 很小，加边框会把行撑高一点，一列行的高矮就不齐了。
+   .task.sel 和它同为两段式选择器，靠"写在后面"压过那个纯悬浮底色 */
+.task.doing{
+  background:color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  box-shadow:inset 2px 0 0 var(--accent);
+}
+.task.doing:hover{ background:var(--accent-soft) }
+.task.doing .title{ font-weight:600 }
 
 /* ── 右侧详情栏 ── */
 .detailpane{ border-left:1px solid var(--border); display:flex; flex-direction:column;

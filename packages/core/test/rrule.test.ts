@@ -203,7 +203,7 @@ describe('向后兼容 0.0.x 的形状', () => {
   it('旧数据完成后照样生成下一个实例', () => {
     const t: Task = {
       id: 'T', title: '旧任务', isAllDay: false, reminders: [], order: '', createdAt: 0,
-      deleted: false, startAt: at('2026-08-26T09:00'), repeat: { freq: 'WEEKLY' },
+      deleted: false, startAt: at('2026-08-26T09:00'), repeat: { freq: 'WEEKLY' }, inProgress: false,
     }
     const next = nextOccurrence(t, at('2026-08-26T10:00'))!
     expect(day(next.startAt)).toBe('Wed Sep 02 2026')
@@ -213,7 +213,7 @@ describe('向后兼容 0.0.x 的形状', () => {
 describe('周期实例的生成', () => {
   const base = (repeat: Task['repeat'], startAt: string): Task => ({
     id: 'T', title: '吃药', isAllDay: false, reminders: [], order: '', createdAt: 0,
-    deleted: false, startAt: at(startAt), repeat,
+    deleted: false, startAt: at(startAt), repeat, inProgress: false,
   })
 
   it('固定周期会跳过已经过去的那些，不补历史', () => {

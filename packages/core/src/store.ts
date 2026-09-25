@@ -107,6 +107,9 @@ export class Store {
     if (!t) return null
     const at = this.env.clock.now()
     const fields: Array<{ id: string; f: string; val: unknown }> = [{ id, f: 'completedAt', val: at }]
+    // 完成即收工：进行中的标记自动清掉。只有确实标记过才写这一条，
+    // 免得给每条完成操作都多塞一行 no-op（日志要跨 iCloud 同步，能省则省）
+    if (t.inProgress) fields.push({ id, f: 'inProgress', val: false })
     let next: Task | null = null
     const occ = nextOccurrence(t, at)
     if (occ && !this.task(occ.id)) {
@@ -127,7 +130,13 @@ export class Store {
   }
 
   uncomplete(id: string) { return this.setField(id, 'completedAt', null) }
-  trash(id: string)      { return this.setField(id, '_deleted', true) }
+  /** 删进垃圾桶时同样收工 —— 一条躺在垃圾桶里的任务不该还标着"进行中" */
+  async trash(id: string) {
+    const t = this.task(id)
+    const fields: Array<{ id: string; f: string; val: unknown }> = [{ id, f: '_deleted', val: true }]
+    if (t?.inProgress) fields.push({ id, f: 'inProgress', val: false })
+    return this.write(fields)
+  }
   restore(id: string)    { return this.setField(id, '_deleted', false) }
   /** 垃圾桶清空也只是打标记——真删在分布式下必然导致数据复活 */
   purge(id: string)      { return this.write([{ id, f: '_purgedAt', val: this.env.clock.now() }]) }
