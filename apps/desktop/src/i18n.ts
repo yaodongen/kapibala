@@ -36,6 +36,12 @@ const ZH = {
   /** 主题开关的悬停提示写"点了会变成什么"，和语言按钮一个规矩 */
   themeToDark: '切换到夜间模式',
   themeToLight: '切换到日间模式',
+  /**
+   * 日历视图的「显示已完成」开关。和主题开关一样，提示语写"点了会变成什么"：
+   * 打开后格子里会多出**那天完成**的任务（按完成日期归格，不是原来的安排日期）
+   */
+  showDoneOn: '显示当天已完成的任务',
+  showDoneOff: '不显示已完成的任务',
 
   // ── 视图 ──
   today: '今天',
@@ -168,6 +174,8 @@ const EN: typeof ZH = {
   langSwitchTip: 'Switch interface language',
   themeToDark: 'Switch to dark mode',
   themeToLight: 'Switch to light mode',
+  showDoneOn: 'Show tasks completed that day',
+  showDoneOff: 'Hide completed tasks',
 
   today: 'Today',
   todaySub: (label, wd) => `${label}, ${wd}`,

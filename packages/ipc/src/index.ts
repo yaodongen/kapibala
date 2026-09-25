@@ -84,6 +84,13 @@ export type Commands = {
   /** 记下拖动后的详情栏宽度。返回实际存进去的值 */
   'ui:setDetailWidth': (width: number) => number
   /**
+   * 日历视图要不要显示"当天已完成"的任务。默认关 —— 日历首先是看安排的，
+   * 已完成的不该一上来就把格子占满。这是本机的界面偏好，两个日历视图共用
+   */
+  'ui:showDone': () => boolean
+  /** 记下这个开关。返回存进去的值 */
+  'ui:setShowDone': (on: boolean) => boolean
+  /**
    * 切到某一屏（视图分组）。主进程先把当前窗口大小记到**离开**的那一屏，
    * 再按 to 这屏记过的大小调窗口。返回实际调成的尺寸；这屏没记过就是 null（窗口不动）
    */
@@ -112,7 +119,7 @@ export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
-  'ui:detailWidth', 'ui:setDetailWidth', 'window:switch', 'app:version',
+  'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone', 'window:switch', 'app:version',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 

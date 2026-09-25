@@ -30,6 +30,8 @@ type UiState = {
   lang?: Lang
   theme?: Theme
   detailWidth?: number
+  /** 日历视图是否显示"当天已完成"的任务。没存过 = 关 */
+  showDone?: boolean
   /** 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot */
   winSize?: Partial<Record<WinSlot, [number, number]>>
 }
@@ -379,6 +381,13 @@ handle('ui:setDetailWidth', (w: number) => {
   const width = Math.min(2000, Math.max(200, n))
   writeUi({ ...readUi(), detailWidth: width })
   return width
+})
+
+handle('ui:showDone', () => readUi().showDone === true)
+handle('ui:setShowDone', (on: boolean) => {
+  if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
+  writeUi({ ...readUi(), showDone: on })
+  return on
 })
 
 handle('window:switch', (to: WinSlot) => {

@@ -340,21 +340,25 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .vault .swap{ margin-left:auto; opacity:.55; font-size:11px }
 .sidefoot{ margin-top:auto; padding:8px 8px 2px; display:flex; align-items:center; gap:8px }
 .sidefoot #langbtn{ margin-left:auto }
-/* 主题开关（列表页右上角、引导页各一个）。主题本身是 CSS 靠 prefers-color-scheme
-   切的（主进程改 nativeTheme.themeSource），这里只画开关自己的状态，不参与配色。
-   滑块上带当前模式的图标：日间是 ☀、夜间是 ☾ */
-.themesw{ position:relative; flex:none; width:38px; height:20px; padding:0; border:none;
+/* 主题开关（主界面左下角的 .sidefoot、引导页各一个）和日历视图的「显示已完成」开关
+   （列表页右上角，只在日历视图出现）共用一套外观。
+   主题本身是 CSS 靠 prefers-color-scheme 切的（主进程改 nativeTheme.themeSource），
+   这里只画开关自己的状态，不参与配色。滑块上带图标：主题是 ☀/☾，已完成是 ✓ */
+.themesw, .donesw{ position:relative; flex:none; width:38px; height:20px; padding:0; border:none;
           border-radius:10px; background:var(--border); cursor:default; vertical-align:-4px;
           transition:background .16s ease }
-.themesw .knob{ position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
+.themesw .knob, .donesw .knob{ position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%;
                display:flex; align-items:center; justify-content:center;
                background:var(--bg); box-shadow:var(--shadow); transition:transform .16s ease }
+.themesw[aria-checked="true"], .donesw[aria-checked="true"]{ background:var(--accent-soft) }
+.themesw[aria-checked="true"] .knob, .donesw[aria-checked="true"] .knob{ transform:translateX(18px); background:var(--accent) }
 .themesw .knob::after{ content:'☀'; font-size:11px; line-height:1; color:var(--dim) }
-.themesw[aria-checked="true"]{ background:var(--accent-soft) }
-.themesw[aria-checked="true"] .knob{ transform:translateX(18px); background:var(--accent) }
 .themesw[aria-checked="true"] .knob::after{ content:'☾'; color:var(--on-accent) }
-/* 顶栏有一条固定的可拖动区域（.titlebar）压在主区上面，开关得浮到它上方才点得到 */
-.vhead .themesw{ margin-top:6px; z-index:60 }
+.donesw .knob::after{ content:'✓'; font-size:11px; line-height:1; color:var(--dim) }
+.donesw[aria-checked="true"] .knob::after{ color:var(--on-accent) }
+/* 顶栏有一条固定的可拖动区域（.titlebar）压在主区上面，剩在顶栏的开关得浮到它上方才点得到。
+   夜间模式开关已经挪到左下角的 .sidefoot，那儿没有遮挡，不用这套 */
+.vhead .donesw{ margin-top:6px; z-index:60 }
 /* 库列表 */
 .vlist{ margin:0; padding:6px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:2px }
 .vrow{ display:flex; align-items:flex-start; gap:9px; padding:8px 10px; border-radius:8px;
@@ -492,6 +496,10 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
     <div class="sidefoot">
       <!-- 左下角显示版本号，点它就是看日志（文案由 app.ts 的 applyStatic 填） -->
       <button class="logbtn verbtn" id="verbtn" data-log></button>
+      <!-- 夜间模式开关放在左下角，和版本号挨着；滑块上带 ☀/☾ -->
+      <button class="themesw" id="themesw" data-themesw role="switch" aria-checked="false">
+        <span class="knob"></span>
+      </button>
       <button class="logbtn" id="langbtn" data-lang></button>
     </div>
   </aside>
@@ -504,7 +512,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
         </div>
         <!-- 只在垃圾桶且里面有东西时出现 -->
         <button class="ghost" id="purgeall" hidden></button>
-        <button class="themesw" id="themesw" data-themesw role="switch" aria-checked="false">
+        <!-- 日历视图的「显示已完成」开关。别的视图藏起来（app.ts 的 render 管 hidden） -->
+        <button class="donesw" id="donesw" data-donesw role="switch" aria-checked="false" hidden>
           <span class="knob"></span>
         </button>
       </div>

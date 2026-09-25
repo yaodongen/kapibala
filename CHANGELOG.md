@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.8.0 — 2026-09-25
+
+- Added a "completed" switch to the calendar views (7d and 14d, remembered in `ui.json`): turn it on and each cell also lists the tasks finished that day, placed by the day you completed them and with the most recently finished on top; the dark-mode switch moved to the bottom-left corner next to the version number.
+- 日历视图新增「显示已完成」开关（7d / 14d 共用，状态记进 `ui.json`）：打开后每格也会列出那天完成的任务，按完成日归格、最后完成的排最前；夜间模式的开关挪到左下角版本号旁边。
+
 ## 1.7.2 — 2026-09-25
 
 - Added an "in progress" mark: right-click a task to set it, and its row lights up in the list with a `Doing` badge until you complete or trash the task; calendar rows now keep the title on one line with an ellipsis (the full title is in the tooltip), cells in a row share the same height, and an in-progress task shows its `Doing` badge in the top-right corner of its cell.

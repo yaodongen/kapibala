@@ -83,6 +83,12 @@ let view: ViewId = DEFAULT_VIEW
  * 日历铺的是格子，要的地方和列表不一样，所以分开记 —— 切回日历就是上次拖好的大小。
  */
 const slotOf = (v: ViewId): WinSlot => (v === 'calendar7' || v === 'calendar14' ? v : 'other')
+/**
+ * 日历视图要不要显示"当天已完成"的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
+ * 打开后已完成的任务按**完成那天**归格，不是它原来安排在哪天（见 pick / calendarCells）。
+ * 状态存在 ui.json 里，和语言、主题一样是本机偏好，两个日历视图共用这一个开关。
+ */
+let showDone = false
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
@@ -174,7 +180,15 @@ function pick(v: ViewId): Task[] {
   if (v === 'next7') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 7)
   // 日历视图和"最近 N 天"是同一批任务：逾期 + 今天起 N 天。没定日期的挂不到日历上
   const cal = CAL[v]
-  if (cal) return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * cal.days)
+  if (cal) {
+    const t1 = t0 + DAY * cal.days
+    // 开关打开：再把"这几天里完成的任务"加进来，按完成那天落在格子里。
+    // 完成时间在今天之前的（更早的历史）没有对应的格子，就不上日历 —— 那是"已完成"视图的事
+    if (showDone) return alive().filter(t => t.completedAt !== undefined
+      ? dayStart(t.completedAt) >= t0 && dayStart(t.completedAt) < t1
+      : t.startAt !== undefined && t.startAt < t1)
+    return undone().filter(t => t.startAt !== undefined && t.startAt < t1)
+  }
   if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
   // 已完成视图里取消勾选也一样，先留一秒
@@ -223,6 +237,9 @@ function group(list: Task[], v: ViewId): Group[] {
  * 日历视图的格子：第一格固定是"已逾期"，其余是今天起 days 天，一共 days + 1 格。
  * 逾期任务没有哪一天可归，只有单独一格才放得下；它排在前面，和列表视图的"逾期置顶"一个观感。
  *
+ * 开关打开后，已完成的任务也进来，按**完成那天**落在对应格（不是安排日期）——
+ * "这周哪天了结了什么事"一眼能看到；完成时间在这几天之前的没有格子可落，不上日历。
+ *
  * 格子按 CAL 里的列数铺成若干行（见 index.html 的 .list.cal），DOM 顺序就是阅读顺序。
  * 空格子也照画 —— 日历凭空少一天比空着更像坏了，而且格子位置固定，勾掉一条时
  * 后面的天数不会整体往前挪。
@@ -233,13 +250,30 @@ function calendarCells(list: Task[], days: number): CalCell[] {
   const over: Task[] = []
   const byDay = new Map<number, Task[]>()
   for (const t of list) {
+    // 开关打开时，已完成的任务按**完成那天**归格：它是那天了结的事，
+    // 原来安排在哪天只留在详情栏里（未完成的仍然按安排日期，和以前一样）。
+    // 逾期的判断只对未完成的做 —— 完成那天没有"逾期"这回事
+    if (showDone && t.completedAt !== undefined) {
+      const d = dayStart(t.completedAt)
+      const arr = byDay.get(d) ?? []
+      arr.push(t); byDay.set(d, arr)
+      continue
+    }
     if (t.startAt === undefined) continue      // 没定日期的挂不到日历上，入口在别的视图
     const d = dayStart(t.startAt)
     if (d < t0) { over.push(t); continue }
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
-  const byTime = (a: Task[]) => a.sort((x, y) => (x.startAt ?? 0) - (y.startAt ?? 0))
+  // 一格里的先后：未完成在上，按安排时间正序（和以前一样）；已完成在下。
+  // 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到
+  const isDone = (t: Task) => showDone && t.completedAt !== undefined
+  const byTime = (a: Task[]) => a.sort((x, y) => {
+    if (isDone(x) !== isDone(y)) return isDone(x) ? 1 : -1
+    return isDone(x)
+      ? y.completedAt! - x.completedAt!
+      : (x.startAt ?? 0) - (y.startAt ?? 0)
+  })
   const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
   for (let i = 0; i < days; i++) {
     const d = t0 + i * DAY
@@ -292,6 +326,7 @@ function applyStatic() {
   // 已完成列表最左边那一列的宽度：英文写 "11:58 PM"，比中文的 "23:58" 宽不少
   document.documentElement.style.setProperty('--doneat-w', lang === 'en' ? '56px' : '44px')
   setThemeSwitch()
+  setDoneSwitch()
 }
 
 /**
@@ -307,6 +342,18 @@ function setThemeSwitch() {
     el.title = tip
     el.setAttribute('aria-label', tip)
   })
+}
+
+/**
+ * 日历视图的「显示已完成」开关。和主题开关一个规矩：提示语写"点了会变成什么"。
+ * 显隐（哪个视图才显示它）由 render() 管，这里只刷状态和文案 —— 换语言时也要重刷。
+ */
+function setDoneSwitch() {
+  const el = $('donesw')
+  const tip = showDone ? S.showDoneOff : S.showDoneOn
+  el.setAttribute('aria-checked', String(showDone))
+  el.title = tip
+  el.setAttribute('aria-label', tip)
 }
 
 /** 换语言不用重启窗口：文案都是 render() 时才取的 */
@@ -452,6 +499,9 @@ function render() {
    * 空库也不走下面那个"空状态"分支：日历把格子画出来本身就是有用的信息。
    */
   const cal = results ? undefined : CAL[view]
+  // 「显示已完成」只在日历视图出现：别的视图本来就没有格子可铺
+  $('donesw').hidden = !cal
+  setDoneSwitch()
   $('list').classList.toggle('cal', !!cal)
   if (cal) {
     $('list').style.setProperty('--cal-cols', String(cal.cols))
@@ -536,7 +586,7 @@ function calendarGrid(list: Task[], days: number): string {
     `<span class="ws">${c.wd ? `<span class="wd">${esc(c.wd)}</span>` : ''}` +
     `${c.items.length ? `<span class="n">${c.items.length}</span>` : ''}</span></div>` +
     (c.items.length
-      ? c.items.map(t => calRow(t, !!c.overdue)).join('')
+      ? c.items.map(t => calRow(t, c)).join('')
       // 空的一天给一道极淡的横杠：日历本来就常常是空的，别让人以为没画出来
       : `<div class="calempty">–</div>`) +
     `</section>`).join('')
@@ -546,13 +596,19 @@ function calendarGrid(list: Task[], days: number): string {
  * 日历视图里的任务行。格子只有一百来像素宽，所以时间、重复标签挪到标题下面一行，
  * 不跟标题抢宽度；其余（勾选、点开详情、点标题就地改名、右键菜单）和列表行完全一样 ——
  * 都挂在 .task / .title / [data-act] 上，事件那套代码不用为这个视图分叉。
+ *
+ * cell 是这行所在的格子：已完成的行按完成那天归格，所以行上给的是**完成时间**
+ * （带个 ✓，免得跟原定的时间看混）；逾期那格的未完成任务才需要补上原来的日期。
  */
-function calRow(t: Task, overdue: boolean): string {
+function calRow(t: Task, cell: CalCell): string {
+  const done = showDone && t.completedAt !== undefined
   const clock = t.startAt !== undefined && !t.isAllDay ? hhmm(t.startAt) : ''
-  // 逾期那一格的表头只有"已逾期"，不带原来的日子就不知道拖了多久（和列表行同理）
-  const when = overdue && t.startAt !== undefined
-    ? [dayLabel(t.startAt), clock].filter(Boolean).join(' ')
-    : clock
+  const when = done
+    ? `✓ ${hhmm(t.completedAt!)}`
+    : cell.overdue && t.startAt !== undefined
+      // 逾期那一格的表头只有"已逾期"，不带原来的日子就不知道拖了多久（和列表行同理）
+      ? [dayLabel(t.startAt), clock].filter(Boolean).join(' ')
+      : clock
   const rep = t.repeat ? describeRepeat(t.repeat, lang) : ''
   const meta = when || rep
     ? `<div class="calmeta">${when ? `<span>${esc(when)}</span>` : ''}${
@@ -561,9 +617,11 @@ function calRow(t: Task, overdue: boolean): string {
   // 进行中：徽标钉在格子右上角，标题给它让出宽度（见 index.html 的 .calrow .tag.doing）。
   // 标题带 title：装不下时被截成一行加省略号，悬浮还能看全
   const prog = t.inProgress ? `<span class="tag doing">${esc(S.inProgress)}</span>` : ''
+  // 开关打开时已完成的行会留在格子里，不该再走"淡出"那套（那是给开关关闭时消失用的）
+  const fading = !showDone && leaving.has(t.id)
   return `<div class="task calrow ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
                t.inProgress ? 'doing' : ''} ${
-               leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
+               fading ? 'leaving' : ''}" data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>${
     prog}<div class="body">${titleEditing === t.id
@@ -838,6 +896,9 @@ document.addEventListener('pointermove', (e) => {
   if (!d) return
   if (!d.on) {
     if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < CAL_DRAG_MIN) return
+    // 开关打开后，已完成的行挂在"完成那天"，拖它改的是安排日期、格子不会动。
+    // 与其让它看着像拖了没反应，干脆不给拖（点标题就地改名照旧）
+    if (showDone && tasks.find(t => t.id === d.id)?.completedAt !== undefined) return
     d.on = true
     document.body.classList.add('caldragging')
     document.querySelector<HTMLElement>(`.calrow[data-task="${d.id}"]`)?.classList.add('dragging')
@@ -869,7 +930,8 @@ window.addEventListener('blur', endCalDrag)      // 指针跑出窗口松手，�
 
 /**
  * 拖到另一天：只换日期，原来的时刻留着；全天任务本来就是零点，拖完还是全天。
- * 写的还是 startAt 一个字段 —— 它在日历上落在哪一格，全是这个字段推出来的。
+ * 写的还是 startAt 一个字段 —— 未完成的任务在日历上落在哪一格，全由它推出来；
+ * 已完成的行按完成那天归格，所以那种行不给拖（见 pointermove 里的守卫）。
  */
 async function moveToDay(id: string, day: number) {
   const t = tasks.find(x => x.id === id)
@@ -1307,6 +1369,17 @@ document.addEventListener('click', async (e) => {
   setThemeSwitch()
 })
 
+/**
+ * 日历视图的「显示已完成」开关。打开后格子里还会列出**那天完成**的任务，
+ * 行上给的是完成时间、标题划删除线。状态存 ui.json，两个日历视图共用这一个开关。
+ */
+document.addEventListener('click', async (e) => {
+  if (!(e.target as HTMLElement).closest('[data-donesw]')) return
+  showDone = await kapi['ui:setShowDone'](!showDone)
+  setDoneSwitch()
+  render()
+})
+
 // 渲染进程自己的报错也要进同一份日志，否则用户看到的日志里没有真正的原因
 window.addEventListener('error', (e) => {
   void kapi['log:renderer'](`${e.message} @ ${e.filename}:${e.lineno}`)
@@ -1397,6 +1470,8 @@ async function boot() {
   // 先把上次拖的详情栏宽度装上，省得第一帧按默认 340 画一遍再跳
   detailW = await kapi['ui:detailWidth']()
   applyDetailW()
+  // 日历的「显示已完成」开关也得在第一次 render 之前拿到，否则会先按默认关画一遍
+  showDone = await kapi['ui:showDone']()
   // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
   theme = await kapi['ui:theme']()
   // 版本号也要 —— applyStatic 要把它写到左下角那个按钮上
