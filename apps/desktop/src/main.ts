@@ -4,7 +4,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, isWinSlot, type TaskDraftIpc, type Theme, type VaultState,
+import { DEFAULT_DETAIL_WIDTH, isWinSlot, type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState,
          type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
@@ -406,6 +406,7 @@ handle('vault:pick', async () => { const s = await pickVault(); return s ? state
 handle('task:list', (): Task[] => store?.tasks() ?? [])
 handle('task:create', (d: TaskDraftIpc) => write(s => s.add(d)))
 handle('task:setField', (id: string, f: string, v: unknown) => write(s => s.setField(id, f, v)))
+handle('task:setMany', (rows: FieldOpIpc[]) => write(s => s.setMany(rows)))
 handle('task:complete', (id: string) => write(s => s.complete(id).then(next => next?.id ?? null)))
 handle('task:uncomplete', (id: string) => write(s => s.uncomplete(id)))
 handle('task:trash', (id: string) => write(s => s.trash(id)))

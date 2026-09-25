@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./testing": "./src/testing.ts",
     "./markdown": "./src/markdown.ts",
+    "./order": "./src/order.ts",
     "./rrule": "./src/rrule.ts",
     "./search": "./src/search.ts"
   },

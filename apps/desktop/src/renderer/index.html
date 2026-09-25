@@ -125,11 +125,18 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .calcell.today .calhead .dl{ color:var(--accent) }
 /* 空的一天：一道极淡的横杠。日历空着很正常，别让人以为这格没画出来 */
 .calempty{ padding:6px 8px; color:var(--dim); opacity:.35; font-size:12px }
-/* ── 日历里拖动改期 ──
-   拖动时整窗都是抓手；被拖的那行淡下去，光标底下那天的格子亮起来当落点提示 */
-body.caldragging, body.caldragging *{ cursor:grabbing !important }
-.calrow.dragging{ opacity:.4 }
-.calcell.drop{ background:var(--accent-soft); border-radius:8px }
+/* ── 拖任务排序 / 改期（日历格子和列表的日期分组共用） ──
+   拖动时整窗都是抓手、顺手禁掉选字（列表里从行的空白处起手会扫到一片文字）；
+   被拖的那行淡下去。落点分两种：插到某一行前面/后面就画一根 2px 的横线，
+   整格亮起来表示"这一格里一条都没有，插进去就是唯一那条" */
+body.caldragging, body.caldragging *{ cursor:grabbing !important;
+                                      -webkit-user-select:none !important; user-select:none !important }
+.task.dragging{ opacity:.4 }
+[data-day].drop{ background:var(--accent-soft); border-radius:8px }
+/* 插入线用 inset 阴影，不用 ::before —— 行是 flex，插个伪元素会挤到行首去。
+   .task.drop-* 两个类，优先级也压得过 .task 那条 */
+.task.drop-before{ box-shadow:inset 0 2px 0 var(--accent) }
+.task.drop-after{ box-shadow:inset 0 -2px 0 var(--accent) }
 /* 跟着光标走的小卡片。pointer-events:none 很关键 —— 否则 elementFromPoint
    找到的是它，落点就永远算在那张卡片上 */
 .calghost{

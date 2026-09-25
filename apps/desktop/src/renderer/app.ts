@@ -6,8 +6,11 @@ import type { Task } from '@kapibala/core'
 // 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
+// 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
+import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import { DEFAULT_DETAIL_WIDTH, type Api, type Theme, type VaultState, type WinSlot } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, type Api, type FieldOpIpc, type Theme, type VaultState,
+         type WinSlot } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -174,6 +177,16 @@ const undone = () => alive().filter(t => !t.completedAt || leaving.has(t.id))
 /** 这条任务算"什么时候完成的"：正在淡出的那条 completedAt 已经空了，退回记下来的旧值 */
 const doneAtOf = (t: Task) => t.completedAt ?? wasDoneAt.get(t.id)
 
+/**
+ * 同一天里的先后：**手排的 order 说了算，时间只当标签**。日历格子和列表的日期分组
+ * 共用这一个比较器，两处顺序才不会各走各的。order 相同时（两台机器同时往同一处拖）
+ * 由 core 那边用 id 兜底，保证哪台机器上算出来都一样。
+ *
+ * 例外是"已逾期"那一格：它跨好几天，手排对它没意义，也当不了拖动落点，
+ * 所以那边仍旧按原定时间排（最逾期的在最上面）。
+ */
+const byOrder = (a: Task, b: Task) => compareOrder(a, b)
+
 function pick(v: ViewId): Task[] {
   const t0 = today()
   if (v === 'today') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY)
@@ -197,7 +210,12 @@ function pick(v: ViewId): Task[] {
   return tasks.filter(t => t.deleted)
 }
 
-type Group = { label: string; wd: string; items: Task[]; overdue?: boolean }
+/**
+ * 一个分组。day 只有"某一天"那几组才有 —— 拖动排序靠它认落点：
+ * "已逾期"跨好几天、"未安排"没有日期，都当不了落点（见 dropAt）。
+ * 已完成视图按完成那天分组、搜索结果按相关度排，也都不带 day。
+ */
+type Group = { label: string; wd: string; items: Task[]; overdue?: boolean; day?: number }
 function group(list: Task[], v: ViewId): Group[] {
   if (v === 'trash') return [{ label: '', wd: '', items: list }]
   // 已完成按"哪天完成的"分组，最近的一天在最前 —— 和"最近 7 天"同一套观感，
@@ -224,11 +242,12 @@ function group(list: Task[], v: ViewId): Group[] {
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
+  // 逾期那一组按原定时间排（最逾期的在最上面）；各天的分组按手排 order，和日历格子一致
   const byTime = (a: Task[]) => a.sort((x, y) => (x.startAt ?? 0) - (y.startAt ?? 0))
   const out: Group[] = []
   if (over.length) out.push({ label: S.overdue, wd: '', items: byTime(over), overdue: true })
   for (const d of [...byDay.keys()].sort((a, b) => a - b))
-    out.push({ label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d)!) })
+    out.push({ label: dayLabel(d), wd: weekday(d), items: byDay.get(d)!.sort(byOrder), day: d })
   if (none.length) out.push({ label: S.unscheduled, wd: '', items: none })
   return out
 }
@@ -265,14 +284,13 @@ function calendarCells(list: Task[], days: number): CalCell[] {
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
-  // 一格里的先后：未完成在上，按安排时间正序（和以前一样）；已完成在下。
+  // 一格里的先后：未完成在上、已完成沉底（见下），未完成那一段按**手排的 order** ——
+  // 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
   // 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到
   const isDone = (t: Task) => showDone && t.completedAt !== undefined
   const byTime = (a: Task[]) => a.sort((x, y) => {
     if (isDone(x) !== isDone(y)) return isDone(x) ? 1 : -1
-    return isDone(x)
-      ? y.completedAt! - x.completedAt!
-      : (x.startAt ?? 0) - (y.startAt ?? 0)
+    return isDone(x) ? y.completedAt! - x.completedAt! : byOrder(x, y)
   })
   const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
   for (let i = 0; i < days; i++) {
@@ -524,7 +542,12 @@ function render() {
     return
   }
   renderDetail()
-  $('list').innerHTML = groups.map(g => `<section class="group">${
+  // data-day：拖动的落点靠它认，和日历格子一套约定（逾期那格是 'overdue'）。
+  // 只有"某一天"和"已逾期"这两类分组带它 —— "未安排"、搜索结果、已完成视图都没有，
+  // 所以那些行既拖不动、也放不进去（见 dropAt）
+  const dayAttr = (g: Group) => g.day !== undefined ? ` data-day="${g.day}"`
+    : g.overdue ? ' data-day="overdue"' : ''
+  $('list').innerHTML = groups.map(g => `<section class="group"${dayAttr(g)}>${
     g.label ? `<div class="ghead ${g.overdue ? 'overdue' : ''}">${g.label}${
       g.wd ? `<span class="wd">${g.wd}</span>` : ''}</div>` : ''
   }${g.items.map(t => row(t, doneList)).join('')}</section>`).join('')
@@ -823,23 +846,51 @@ document.addEventListener('mousedown', (e) => {
   actedOnMousedown = true
 })
 
-/* ── 日历视图：把任务从一天拖到另一天 ──
+/* ── 拖任务：日历格里排序/改期，列表的日期分组里排序/改期 ──
  *
  * 用 pointer 事件自己做，不上 HTML5 拖放：那一套和现有的 mousedown 交互（圆圈勾选、
  * 点标题就地改名）抢同一个按下事件，而这个列表里"点一下"和"拖一下"必须共存 ——
- * 按下先只记着，挪过 5px 才算拖，没挪就是一次普通的点。放下的目标按天走：
- * 只换日期、保留原来的时刻（全天任务本来就是零点，拖完还是全天）。
+ * 按下先只记着，挪过 5px 才算拖，没挪就是一次普通的点。
+ *
+ * 一个手势干两件事：落在同一天就是**排序**（写 order），落到别的天就是**改期**
+ * （写 startAt，时刻留着；全天任务本来就是零点，拖完还是全天）顺带排到那个位置。
+ * 落点精确到"插在哪一条前面"：光标在行的上半就插它前面，下半就插它后面，
+ * 那根 2px 的横线就是提示（见 index.html 的 .task.drop-before）。
+ *
+ * 两个视图共用这一套：起手行和落点都按 [data-task] 找，落点容器按 [data-day] 找 ——
+ * 日历是 .calcell，列表是带 data-day 的那个 .group。所以"已逾期"和"未安排"这两组
+ * （没有 data-day）既拖不动、也放不进去。
  */
 
 /** 判断是"点"还是"拖"的分界（像素）。太小会把点击误判成拖动 */
 const CAL_DRAG_MIN = 5
+/** 拖动时贴住列表上/下边缘就自己滚。列表比日历长得多（"全部"能铺几十天），
+ *  不滚就够不到别的日期分组 */
+const SCROLL_EDGE = 32      // 离边缘多近开始滚
+const SCROLL_STEP = 14      // 每一步滚多少像素
+/** 光标不在任何一格里时，"就近认一格"的最大距离。得比分组之间那道 18px 的缝大 */
+const NEAR_CELL = 24
+/**
+ * kind 记这条行是从哪儿起手的，两处的"点标题"规矩是相反的：
+ *   cal  —— 日历格子。标题要等 pointerup 才进编辑态，否则没法从标题上起手拖
+ *   list —— 列表。标题必须 mousedown 就进（见 mousedown 那段），所以真拖起来要
+ *           先把那个输入框收掉
+ */
 type CalDrag = {
   id: string
-  from: string                 // 起手那格的 data-day
+  kind: 'cal' | 'list'
   x: number; y: number         // 按下时的光标位置
-  title: boolean               // 按在标题上：松手没挪就进改名
+  title: boolean               // 按在标题上：松手没挪就是一次"改标题"（只有日历走这条路）
   on: boolean                  // 已经挪过阈值，真的在拖了
-  drop: string | null          // 当前高亮的落点
+  drop: string | null          // 当前落点的标记，只有变了才动 DOM
+}
+/** 落点：目标容器 + 插在谁前面（null = 追加到那一格未完成列的末尾） */
+type DropHit = {
+  cell: HTMLElement
+  day: string
+  beforeId: string | null
+  lineRow: HTMLElement | null  // 画插入线的那一行；null = 只亮容器（里面一条都没有）
+  lineAfter: boolean
 }
 let calDrag: CalDrag | null = null
 /** 刚拖完，压掉随之而来的那次 click（不然会顺手把任务选中、打开备注） */
@@ -859,22 +910,127 @@ function moveGhost(x: number, y: number) {
   dragGhost.style.left = `${x + 12}px`
   dragGhost.style.top = `${y + 10}px`
 }
+/** 清掉落点提示。容器高亮和行上的插入线是两套，一起清 */
+function clearDropMarks() {
+  document.querySelectorAll('[data-day].drop').forEach(c => c.classList.remove('drop'))
+  document.querySelectorAll('.task.drop-before, .task.drop-after')
+    .forEach(r => r.classList.remove('drop-before', 'drop-after'))
+}
+
 /** 收尾：清掉所有拖动痕迹。指针在窗口外松手时指针事件收不到，所以窗口失焦也要清 */
 function endCalDrag() {
   calDrag = null
   dragGhost?.remove()
   dragGhost = null
   document.body.classList.remove('caldragging')
-  document.querySelectorAll('.calrow.dragging').forEach(r => r.classList.remove('dragging'))
-  document.querySelectorAll('.calcell.drop').forEach(c => c.classList.remove('drop'))
+  document.querySelectorAll('.task.dragging').forEach(r => r.classList.remove('dragging'))
+  clearDropMarks()
+  stopAutoScroll()
 }
 
-/** 光标底下那一格，以及它能不能当落点（逾期格不行 —— 它是好几天，不是一个日期） */
-function dropDayAt(x: number, y: number, from: string): { cell: HTMLElement; day: string } | null {
-  const cell = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.calcell')
+/** 一行的竖直中线。上半 = 插它前面，下半 = 插它后面 */
+function rowMid(r: HTMLElement): number {
+  const b = r.getBoundingClientRect()
+  return b.top + b.height / 2
+}
+
+/** 第 i 行的前面/后面 → 落点。after 时 beforeId 是"下一行"，没有下一行就是追加 */
+function hitAt(cell: HTMLElement, day: string, open: HTMLElement[], i: number, after: boolean): DropHit {
+  const row = open[i]!
+  return { cell, day, lineRow: row, lineAfter: after,
+           beforeId: after ? open[i + 1]?.dataset['task'] ?? null : row.dataset['task']! }
+}
+
+/**
+ * 光标不在任何一格里时，按纵向距离就近认一格。
+ *
+ * 分组之间那道缝（margin 不在盒子里）归 #list 管，光标从一天的组往下挪到隔壁组时
+ * 会经过它 —— 不就近认一格的话，落点在那儿会闪一下"无"，看着像放不进去。
+ *
+ * max 卡死距离：列表底部那 40px、日历底部那半屏留白都不该算"落在最后一天上"。
+ */
+function nearestCell(y: number, max: number): HTMLElement | null {
+  let best: HTMLElement | null = null, bestD = Infinity
+  document.querySelectorAll<HTMLElement>('#list [data-day]').forEach(c => {
+    if (c.dataset['day'] === 'overdue') return       // 逾期格当不了落点，别让它抢
+    const r = c.getBoundingClientRect()
+    const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
+    if (d < bestD) { bestD = d; best = c }
+  })
+  return bestD <= max ? best : null
+}
+
+/**
+ * 光标底下该插到哪。落点容器只能是"某一天"（有 data-day 且不是逾期）——
+ * 逾期格跨好几天、未安排没日期，都当不了落点。
+ * 已完成的行排不上序（日历里沉底、已完成视图里按完成时间），落在它上面按就近的行算。
+ */
+function dropAt(x: number, y: number): DropHit | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null
+  const cell = el?.closest<HTMLElement>('[data-day]')
+    // 落在没有 data-day 的分组里（未安排、搜索结果）就是没有落点，别去就近认
+    ?? (el?.closest('.group') ? null : nearestCell(y, NEAR_CELL))
   const day = cell?.dataset['day']
-  if (!cell || !day || day === 'overdue' || day === from) return null
-  return { cell, day }
+  if (!cell || !day || day === 'overdue') return null
+  // 只有未完成的行排得上序
+  const open: HTMLElement[] = Array.from(cell.querySelectorAll<HTMLElement>('[data-task]'))
+    .filter(r => !r.classList.contains('is-done'))
+  // 这一格里一条都没有：亮整个容器，插进去就是唯一那条
+  if (!open.length) return { cell, day, beforeId: null, lineRow: null, lineAfter: false }
+  const row = el?.closest<HTMLElement>('[data-task]')
+  if (row && open.includes(row)) return hitAt(cell, day, open, open.indexOf(row), y > rowMid(row))
+  // 表头、组之间的缝、行下面那片空白：第一行中线以上插最前，否则接在最后一行后面
+  if (y < rowMid(open[0]!)) return hitAt(cell, day, open, 0, false)
+  return hitAt(cell, day, open, open.length - 1, true)
+}
+
+/** 按当前光标位置更新落点提示。落点没换就不动 DOM，免得每动一下都重排 */
+function updateDropMarks(x: number, y: number) {
+  const d = calDrag
+  if (!d) return
+  const hit = dropAt(x, y)
+  // 标记：行上是"哪一行、上半还是下半"，整格高亮就是容器本身
+  const key = !hit ? null
+    : hit.lineRow ? `${hit.day}:${hit.beforeId ?? ''}:${hit.lineAfter ? 'a' : 'b'}` : `${hit.day}:*`
+  if (key === d.drop) return
+  d.drop = key
+  clearDropMarks()
+  if (!hit) return
+  if (hit.lineRow) hit.lineRow.classList.add(hit.lineAfter ? 'drop-after' : 'drop-before')
+  else hit.cell.classList.add('drop')
+}
+
+/* 拖到列表上/下边缘时自己滚。每滚一步落点都会变，可指针没动、收不到 pointermove，
+   所以这里自己把落点重算一次 */
+let scrollTimer: number | null = null
+let lastPointer = { x: 0, y: 0 }
+function startAutoScroll() {
+  if (scrollTimer !== null) return
+  scrollTimer = window.setInterval(() => {
+    if (!calDrag?.on) return
+    const list = $('list'), r = list.getBoundingClientRect()
+    const step = lastPointer.y < r.top + SCROLL_EDGE ? -SCROLL_STEP
+      : lastPointer.y > r.bottom - SCROLL_EDGE ? SCROLL_STEP : 0
+    if (!step) return
+    const before = list.scrollTop
+    list.scrollTop += step
+    if (list.scrollTop !== before) updateDropMarks(lastPointer.x, lastPointer.y)
+  }, 40)
+}
+function stopAutoScroll() {
+  if (scrollTimer === null) return
+  clearInterval(scrollTimer)
+  scrollTimer = null
+}
+
+/** 某天里"未完成、按手排顺序"的那一串。逾期的不算 —— 那些归在第一格里。
+ *
+ * day 用的是格子上 data-day 的**原值**，不重新归一化：calendarCells 分组时也是拿
+ * t0 + i*DAY 直接当键（夏令时切换那天它偏一小时），两边同一个口径才找得到同一批任务。
+ */
+function dayOpen(day: number): Task[] {
+  return tasks.filter(t => !t.deleted && t.completedAt === undefined
+    && t.startAt !== undefined && dayStart(t.startAt) === day).sort(byOrder)
 }
 
 document.addEventListener('pointerdown', (e) => {
@@ -882,65 +1038,106 @@ document.addEventListener('pointerdown', (e) => {
   endCalDrag()                 // 上一次没收尾（指针在窗口外松手），先清干净
   if (e.button !== 0) return
   const target = e.target as HTMLElement
-  const row = target.closest<HTMLElement>('.calrow')
+  const row = target.closest<HTMLElement>('[data-task]')
   if (!row || target.closest('[data-act]')) return      // 圆圈还是走勾选那条路
-  const cell = row.closest<HTMLElement>('.calcell')
-  const day = cell?.dataset['day']
-  if (!day) return
-  calDrag = { id: row.dataset['task']!, from: day, x: e.clientX, y: e.clientY,
-              title: !!target.closest('.title'), on: false, drop: null }
+  // 只有"某一天"里的行能拖（逾期和未安排那两组没有 data-day）。落点可以是别的天，
+  // 所以这里看的是**起手那一行**在哪
+  if (!row.closest<HTMLElement>('[data-day]')?.dataset['day']) return
+  calDrag = { id: row.dataset['task']!, kind: row.closest('.calcell') ? 'cal' : 'list',
+              x: e.clientX, y: e.clientY, title: !!target.closest('.title'), on: false, drop: null }
 })
 
 document.addEventListener('pointermove', (e) => {
   const d = calDrag
   if (!d) return
+  lastPointer = { x: e.clientX, y: e.clientY }
   if (!d.on) {
     if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < CAL_DRAG_MIN) return
-    // 开关打开后，已完成的行挂在"完成那天"，拖它改的是安排日期、格子不会动。
-    // 与其让它看着像拖了没反应，干脆不给拖（点标题就地改名照旧）
-    if (showDone && tasks.find(t => t.id === d.id)?.completedAt !== undefined) return
+    const t = tasks.find(x => x.id === d.id)
+    // 已完成的不给拖：日历里它挂在"完成那天"、已完成视图按完成时间排，拖它改的是
+    // 安排日期，位置根本不会动。与其看着像拖了没反应，干脆不给拖（点标题改名照旧）
+    if (!t || t.completedAt !== undefined) return
+    // 列表里点标题在 mousedown 就进编辑态了（那是防"点了没反应"的老规矩，动不了）。
+    // 真拖起来先把那个框收掉：攒够 5px 才走到这儿，用户还一个字没打
+    if (d.kind === 'list') {
+      const ta = document.querySelector<HTMLInputElement>('[data-titleedit]')
+      ta?.blur()
+      // blur 之后补一次它自己的关闭路径。窗口没有系统焦点时（从别的应用切回来、
+      // 焦点在别的窗口上）blur 不会发 focusout，光靠它编辑框会一直挂着。
+      // saveRowTitle 自己有 closed 守卫，focusout 正常发过时这一次是空转
+      if (ta && titleEditing) void saveRowTitle(ta)
+    }
     d.on = true
     document.body.classList.add('caldragging')
-    document.querySelector<HTMLElement>(`.calrow[data-task="${d.id}"]`)?.classList.add('dragging')
+    document.querySelector<HTMLElement>(`[data-task="${d.id}"]`)?.classList.add('dragging')
     showGhost(d.id, e.clientX, e.clientY)
+    startAutoScroll()
   } else moveGhost(e.clientX, e.clientY)
-  const hit = dropDayAt(e.clientX, e.clientY, d.from)
-  const drop = hit?.day ?? null
-  if (drop === d.drop) return                    // 没换格子就不动 DOM，免得每动一下都重排
-  d.drop = drop
-  document.querySelectorAll('.calcell.drop').forEach(c => c.classList.remove('drop'))
-  if (hit) hit.cell.classList.add('drop')
+  updateDropMarks(e.clientX, e.clientY)
 })
 
 document.addEventListener('pointerup', (e) => {
   const d = calDrag
   if (!d) return
-  const on = d.on, title = d.title, id = d.id, from = d.from
-  const hit = on ? dropDayAt(e.clientX, e.clientY, from) : null
+  const on = d.on, id = d.id, title = d.kind === 'cal' && d.title
+  const hit = on ? dropAt(e.clientX, e.clientY) : null
   endCalDrag()
   if (!on) {
-    // 没挪 = 一次普通的点。点标题进就地编辑放到这里：按下时就进的话没法起手拖
+    // 没挪 = 一次普通的点。日历里点标题进就地编辑放到这里：按下时就进的话没法起手拖。
+    // 列表那边 mousedown 已经进过了，这里再来一次会把刚聚焦的框换掉
     if (title) { actedOnMousedown = true; beginTitleEdit(id, e.clientX, e.clientY) }
     return
   }
   suppressClick = true
-  if (hit) void moveToDay(id, Number(hit.day))
+  if (hit) void applyCalDrop(id, hit)
 })
 window.addEventListener('blur', endCalDrag)      // 指针跑出窗口松手，收不到 pointerup
 
+/** 改期到某一天：时刻、分秒都留着；全天任务本来就是零点，改完还是全天 */
+function sameClockOn(from: number, day: number): number {
+  const src = new Date(from), dst = new Date(day)
+  dst.setHours(src.getHours(), src.getMinutes(), src.getSeconds(), src.getMilliseconds())
+  return +dst
+}
+
 /**
- * 拖到另一天：只换日期，原来的时刻留着；全天任务本来就是零点，拖完还是全天。
- * 写的还是 startAt 一个字段 —— 未完成的任务在日历上落在哪一格，全由它推出来；
- * 已完成的行按完成那天归格，所以那种行不给拖（见 pointermove 里的守卫）。
+ * 把一条任务放到目标格的那个位置上。
+ *
+ * 正常情况一个手势只写一条 op：拿目标位置左右两条的 order 算出夹在中间的 key
+ *（docs/storage.zh.md §7.3）。跨天时 startAt 一起写，两条 op 同一次落盘。
+ * 老库的 16 位时间戳 key 挨得极近时，两个邻居之间可能一个空位都没有 ——
+ * core 的 orderBetween 那时返回 null，这里就把那一格按当前顺序整格重铺一遍。
+ *
+ * 已完成的行按完成那天归格，拖它改的是安排日期、格子不会动；与其看着像拖了没反应，
+ * 干脆不给拖（见 pointermove 里的守卫）。
  */
-async function moveToDay(id: string, day: number) {
+async function applyCalDrop(id: string, hit: DropHit) {
   const t = tasks.find(x => x.id === id)
   if (!t || t.startAt === undefined) return
-  const src = new Date(t.startAt)
-  const dst = new Date(day)
-  dst.setHours(src.getHours(), src.getMinutes(), src.getSeconds(), src.getMilliseconds())
-  if (+dst === t.startAt) return
-  await kapi['task:setField'](id, 'startAt', +dst)
+  const day = Number(hit.day)
+  const sameDay = day === dayStart(t.startAt)
+  // 目标格未完成的那一串（**含**被拖的这条）和摘掉它之后的槽位。
+  // 插槽按"含自己"的那份算，落在自己头上（beforeId 就是自己）才会算成原地不动 ——
+  // 摘掉之后再 findIndex 找的是"下一格槽位"，会把原地一下拖成追加到末尾
+  const all = dayOpen(day)
+  const cur = sameDay ? all.findIndex(x => x.id === id) : -1
+  const rest = all.filter(x => x.id !== id)
+  const j = hit.beforeId === null ? -1 : all.findIndex(x => x.id === hit.beforeId)
+  const at = j < 0 ? rest.length : all.slice(0, j).filter(x => x.id !== id).length
+  // 原地没动就什么都不写：否则每点一下都白写一条 op，order 还会越切越碎
+  if (sameDay
+    && (rest[at - 1]?.id ?? null) === (all[cur - 1]?.id ?? null)
+    && (rest[at]?.id ?? null) === (all[cur + 1]?.id ?? null)) return
+  const startAt = sameDay ? t.startAt : sameClockOn(t.startAt, day)
+  const rows: FieldOpIpc[] = []
+  const order = orderBetween(rest[at - 1]?.order ?? null, rest[at]?.order ?? null)
+  if (order === null) {
+    // 挤满了：按"落下之后"的顺序把整格重铺一遍，落点就用重铺给它的 key
+    const seq = [...rest.slice(0, at), t, ...rest.slice(at)]
+    for (const { id: x, key } of spreadOrders(seq.map(x => x.id))) rows.push({ id: x, f: 'order', val: key })
+  } else rows.push({ id, f: 'order', val: order })
+  if (!sameDay) rows.push({ id, f: 'startAt', val: startAt })
+  await kapi['task:setMany'](rows)
 }
 
 /**
@@ -1163,6 +1360,23 @@ document.addEventListener('focusout', (e) => {
   if (el && customFor) commitCustomDays(el)
 })
 
+/**
+ * 新任务落在哪：那一天已排最后一条的后面。
+ *
+ * "哪一天"只有渲染进程算得出来（本地时区的零点，core 不碰时区），所以落点在这里
+ * 算好、随 task:create 一起发过去。不带的话 core 只能按创建时间给个 key ——
+ * 在手动排过序的格子里会插到当中去，明明是刚加的任务却出现在中间。
+ */
+function orderForNewDay(startAt: number): string {
+  const day = dayStart(startAt)
+  let last: string | null = null
+  for (const t of tasks) {
+    if (t.deleted || t.startAt === undefined || dayStart(t.startAt) !== day) continue
+    if (t.order && (last === null || t.order > last)) last = t.order
+  }
+  return orderBetween(last, null)!
+}
+
 const ti = $('newTitle') as HTMLInputElement
 const di = $('newDate') as HTMLInputElement
 const ri = $('newRepeat') as HTMLSelectElement
@@ -1172,6 +1386,7 @@ ti.addEventListener('keydown', async (e) => {
   const id = await kapi['task:create']({
     title: ti.value.trim(),
     startAt: at,
+    order: orderForNewDay(at),
     ...(ri.value ? { repeat: { rrule: ri.value } } : {}),
   })
   ti.value = ''; di.value = ''; ri.value = ''

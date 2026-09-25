@@ -26,7 +26,12 @@ export type TaskDraftIpc = {
   startAt?: number
   isAllDay?: boolean
   repeat?: RepeatRule
+  /** 落点（分数索引 key）。界面知道"哪一天"，算好一起发过来，见 core 的 order.ts */
+  order?: string
 }
+
+/** 一次字段写入。多行一起发 = 一次落盘（见 store.setMany） */
+export type FieldOpIpc = { id: string; f: string; val: unknown }
 
 /**
  * 界面主题。只有亮/暗两种 —— "跟系统"不是第三种取值，而是**没存过偏好**时的默认行为：
@@ -60,6 +65,9 @@ export type Commands = {
   'task:list': () => Task[]
   'task:create': (draft: TaskDraftIpc) => string
   'task:setField': (id: string, field: string, val: unknown) => void
+  /** 一批字段一次写。拖动排序/改期用：跨天要 startAt + order 一起写，那一格
+   *  挤满了要整格重排时也是一批 —— 分几次发就是几次落盘 */
+  'task:setMany': (rows: FieldOpIpc[]) => void
   /** 完成。周期任务会派生下一个实例，返回它的 id（不重复、或系列已结束就是 null），
    *  界面据此把详情栏跟过去 */
   'task:complete': (id: string) => string | null
@@ -117,7 +125,7 @@ export type Events = {
 
 export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
-  'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
+  'task:setMany', 'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
   'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone', 'window:switch', 'app:version',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',

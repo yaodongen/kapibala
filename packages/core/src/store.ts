@@ -5,6 +5,7 @@ import { applyOp, replay, tasksOf } from './state.ts'
 import { SEGMENT_MAX_BYTES, dehydrate, encodeOps, readVault, segName } from './log.ts'
 import { ulid } from './ids.ts'
 import { nextOccurrence } from './repeat.ts'
+import { orderKey } from './order.ts'
 import { openVault, createVault, type OpenResult } from './vault.ts'
 
 export type TaskDraft = {
@@ -15,6 +16,9 @@ export type TaskDraft = {
   repeat?: Task['repeat']
   seriesId?: string
   id?: string
+  /** 落点（分数索引 key）。界面算好传进来（见 app.ts 的 orderForNewDay）；
+   *  不带就退回 orderKey 那个近似落点 */
+  order?: string
 }
 
 export type Health = { badLines: number; droppedTail: boolean; incomplete: boolean; devices: number }
@@ -89,7 +93,9 @@ export class Store {
       { id, f: 'title', val: d.title },
       { id, f: 'createdAt', val: this.env.clock.now() },
       { id, f: 'isAllDay', val: d.isAllDay ?? true },
-      { id, f: 'order', val: orderKey(this.env.clock.now()) },
+      // 落点由调用方给：界面知道"哪一天"，能算出那天末尾的位置。界外调用
+      //（CLI、测试）没这个信息，退回按创建时间递增的 key
+      { id, f: 'order', val: d.order ?? orderKey(this.env.clock.now()) },
     ]
     if (d.notes !== undefined) f.push({ id, f: 'notes', val: d.notes })
     if (d.startAt !== undefined) f.push({ id, f: 'startAt', val: d.startAt })
@@ -100,6 +106,16 @@ export class Store {
   }
 
   setField(id: string, f: string, val: unknown) { return this.write([{ id, f, val }]) }
+
+  /**
+   * 一批字段写进同一次 append。一次拖拽要么只改 order（单天内排序），要么
+   * startAt + order 一起改（跨天顺带定位）；那一格挤满了要整格重排时也是一批。
+   * 分几次调 setField 就是几次追加、几条段记录 —— 日志要跨 iCloud 同步，能省则省。
+   */
+  async setMany(rows: Array<{ id: string; f: string; val: unknown }>): Promise<void> {
+    if (!rows.length) return
+    await this.write(rows)
+  }
 
   /** 完成。周期任务顺带生成下一个实例（ID 确定性派生，两台机器不会各生成一个） */
   async complete(id: string): Promise<Task | null> {
@@ -172,6 +188,3 @@ export class Store {
     return { lastSegment: frozen }
   }
 }
-
-/** 分数索引的占位实现：够用且不会在并发插入时互相破坏。拖拽排序见 Task 7 */
-function orderKey(now: number): string { return String(now).padStart(16, '0') }
