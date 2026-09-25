@@ -40,6 +40,14 @@ export type Theme = 'light' | 'dark'
  */
 export const DEFAULT_DETAIL_WIDTH = 340
 
+/**
+ * 窗口大小按"哪一屏"分开记：两个日历视图各记各的，其余视图共用一份。
+ * 日历铺的是格子，要的地方和列表不一样，用户不用每次切视图都手动拖窗口。
+ */
+export type WinSlot = 'other' | 'calendar7' | 'calendar14'
+export const WIN_SLOTS: readonly WinSlot[] = ['other', 'calendar7', 'calendar14']
+export const isWinSlot = (x: unknown): x is WinSlot => WIN_SLOTS.includes(x as WinSlot)
+
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
 export type Commands = {
   'vault:state': () => VaultState
@@ -75,6 +83,13 @@ export type Commands = {
   'ui:detailWidth': () => number
   /** 记下拖动后的详情栏宽度。返回实际存进去的值 */
   'ui:setDetailWidth': (width: number) => number
+  /**
+   * 切到某一屏（视图分组）。主进程先把当前窗口大小记到**离开**的那一屏，
+   * 再按 to 这屏记过的大小调窗口。返回实际调成的尺寸；这屏没记过就是 null（窗口不动）
+   */
+  'window:switch': (to: WinSlot) => [number, number] | null
+  /** 当前版本号，显示在左下角（点它就是看日志） */
+  'app:version': () => string
   'log:read': () => { text: string; path: string }
   'log:copy': () => void
   'log:reveal': () => void
@@ -97,7 +112,7 @@ export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
-  'ui:detailWidth', 'ui:setDetailWidth',
+  'ui:detailWidth', 'ui:setDetailWidth', 'window:switch', 'app:version',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 

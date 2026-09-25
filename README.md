@@ -72,6 +72,7 @@ Because no file is ever written by two Macs, the classic synced-folder failure â
 
 - Notes, with Markdown
 - Start date and time
+- **Drag to reschedule**: in a calendar view, drag a task from one day to another â€” the time of day stays
 - **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, and **every N days** (type 17, say)
 - One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
 - **Search** across titles and notes; space-separated words all have to match
@@ -81,6 +82,8 @@ Because no file is ever written by two Macs, the classic synced-folder failure â
 - Today
 - **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
 - Next 30 days: same grouping, for the month ahead
+- **Calendar (7d)**: overdue + the next 7 days, tiled by day in a 4 Ã— 2 grid, overdue in the first cell
+- **Calendar (14d)**: overdue + the next 14 days, in a 5 Ã— 3 grid
 - All tasks
 - **Completed**: grouped by the day you finished it, most recent day first, with the time of day on the left of each row
 - Trash
@@ -88,6 +91,8 @@ Because no file is ever written by two Macs, the classic synced-folder failure â
 **Interface**
 
 - English and Chinese. It follows your Mac's language, and you can switch any time from the bottom-left corner
+- The bottom-left corner shows the version number; clicking it opens the log
+- Window size is remembered per view: the two calendar views each keep their own, so switching back restores the size you dragged
 - Closing the window just tucks it away and the app keeps running. To really quit, right-click the Dock icon and choose Quit
 
 ## 5. Privacy

@@ -7,7 +7,7 @@ import type { Task } from '@kapibala/core'
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import { DEFAULT_DETAIL_WIDTH, type Api, type Theme, type VaultState } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, type Api, type Theme, type VaultState, type WinSlot } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -21,6 +21,8 @@ let lang: Lang = 'zh'
 let S: Strings = dict('zh')
 /** 当前生效的亮/暗。配色是 CSS 的 prefers-color-scheme 在管，这个只喂开关 */
 let theme: Theme = 'light'
+/** 版本号，显示在左下角（点它就是看日志）。boot() 里拉到，之前先用"查看日志"兜底 */
+let version = ''
 
 const DAY = 86400000
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
@@ -48,22 +50,39 @@ const dayLabel = (ts: number) => {
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
-/** 不做清单，所以就这 6 项。名字和副标题都从字典取，键名和视图 id 对齐 */
+/** 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐 */
 const VIEWS = [
   { id: 'today', ico: '☀', sub: () => S.todaySub(dayLabel(today()), weekday(today())) },
   { id: 'next7', ico: '▤', sub: () => S.next7Sub },
   { id: 'next30', ico: '▦', sub: () => S.next30Sub },
+  { id: 'calendar7',  ico: '▥', sub: () => S.calendar7Sub },
+  { id: 'calendar14', ico: '▩', sub: () => S.calendar14Sub },
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
 ] as const
 type ViewId = typeof VIEWS[number]['id']
 
+/**
+ * 两个日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
+ * 7 天 = 逾期 + 7 = 8 格，铺成 4 列 × 2 行；14 天 = 15 格，铺成 5 列 × 3 行 ——
+ * 都刚好铺满，不留半行。列数写进 --cal-cols，布局在 index.html 的 .list.cal 里。
+ */
+const CAL: Partial<Record<ViewId, { days: number; cols: number }>> = {
+  calendar7: { days: 7, cols: 4 },
+  calendar14: { days: 14, cols: 5 },
+}
+
 let tasks: Task[] = []
 let vault: VaultState | null = null
 /** 打开就停在这个视图：只看今天容易漏掉马上要到的事，一周的视野更实用 */
 const DEFAULT_VIEW: ViewId = 'next7'
 let view: ViewId = DEFAULT_VIEW
+/**
+ * 窗口大小按哪一屏记：两个日历视图各记各的，其余视图共用一份（见 ipc 里的 WinSlot）。
+ * 日历铺的是格子，要的地方和列表不一样，所以分开记 —— 切回日历就是上次拖好的大小。
+ */
+const slotOf = (v: ViewId): WinSlot => (v === 'calendar7' || v === 'calendar14' ? v : 'other')
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
@@ -153,6 +172,9 @@ function pick(v: ViewId): Task[] {
   const t0 = today()
   if (v === 'today') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY)
   if (v === 'next7') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 7)
+  // 日历视图和"最近 N 天"是同一批任务：逾期 + 今天起 N 天。没定日期的挂不到日历上
+  const cal = CAL[v]
+  if (cal) return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * cal.days)
   if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
   // 已完成视图里取消勾选也一样，先留一秒
@@ -197,6 +219,35 @@ function group(list: Task[], v: ViewId): Group[] {
   return out
 }
 
+/**
+ * 日历视图的格子：第一格固定是"已逾期"，其余是今天起 days 天，一共 days + 1 格。
+ * 逾期任务没有哪一天可归，只有单独一格才放得下；它排在前面，和列表视图的"逾期置顶"一个观感。
+ *
+ * 格子按 CAL 里的列数铺成若干行（见 index.html 的 .list.cal），DOM 顺序就是阅读顺序。
+ * 空格子也照画 —— 日历凭空少一天比空着更像坏了，而且格子位置固定，勾掉一条时
+ * 后面的天数不会整体往前挪。
+ */
+type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?: boolean; today?: boolean }
+function calendarCells(list: Task[], days: number): CalCell[] {
+  const t0 = today()
+  const over: Task[] = []
+  const byDay = new Map<number, Task[]>()
+  for (const t of list) {
+    if (t.startAt === undefined) continue      // 没定日期的挂不到日历上，入口在别的视图
+    const d = dayStart(t.startAt)
+    if (d < t0) { over.push(t); continue }
+    const arr = byDay.get(d) ?? []
+    arr.push(t); byDay.set(d, arr)
+  }
+  const byTime = (a: Task[]) => a.sort((x, y) => (x.startAt ?? 0) - (y.startAt ?? 0))
+  const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
+  for (let i = 0; i < days; i++) {
+    const d = t0 + i * DAY
+    cells.push({ key: String(d), label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d) ?? []), today: i === 0 })
+  }
+  return cells
+}
+
 const $ = (id: string) => document.getElementById(id)!
 
 /**
@@ -206,7 +257,7 @@ const $ = (id: string) => document.getElementById(id)!
 function applyStatic() {
   document.documentElement.lang = S.htmlLang
   const text: Array<[string, string]> = [
-    ['brandname', S.brand], ['logbtn', S.viewLog], ['langbtn', S.langOther],
+    ['brandname', S.brand], ['langbtn', S.langOther],
     ['welcomelang', S.langOther],
     ['welcometitle', S.welcomeTitle], ['pick', S.welcomePick],
     ['welcomehint', S.welcomeHint], ['welcomelog', S.welcomeLog],
@@ -218,6 +269,12 @@ function applyStatic() {
     ['logreveal', S.logReveal], ['logclose', S.close],
   ]
   for (const [id, v] of text) $(id).textContent = v
+  // 左下角显示当前的版本号；点它和"查看日志"是一回事，所以提示语沿用那句。
+  // 版本号是语言无关的，不进字典；还没拉到就先用"查看日志"兜着
+  const ver = $('verbtn')
+  ver.textContent = version ? `v${version}` : S.viewLog
+  ver.title = S.viewLog
+  ver.setAttribute('aria-label', S.viewLog)
   // 这三句里有 <b>，是字典里写好的、不含用户输入的片段
   for (const [id, v] of [['welcomesync', S.welcomeSync], ['welcomelocal', S.welcomeLocal],
                          ['welcomeundo', S.welcomeUndo]] as Array<[string, string]>)
@@ -351,7 +408,7 @@ function render() {
   const restoreScroll = keepScroll()
   $('nav').innerHTML = VIEWS.map((v, i) => {
     const n = pick(v.id).length
-    return (i === 4 ? '<div class="sep"></div>' : '') +
+    return (i === 6 ? '<div class="sep"></div>' : '') +
       `<button class="nav ${v.id === view ? 'on' : ''}" data-view="${v.id}">` +
       `<span class="ico">${v.ico}</span>${esc(S[v.id])}${n ? `<span class="n">${n}</span>` : ''}</button>`
   }).join('')
@@ -388,6 +445,22 @@ function render() {
    */
   const doneList = view === 'done' && !results
   $('list').classList.toggle('alldone', doneList)
+  /**
+   * 日历视图：同一批任务（逾期 + 今天起 N 天）不走"分组标题 + 一列任务"那条路，
+   * 摊成日期格子（7d 是 4 列 × 2 行，14d 是 5 列 × 3 行，列数写进 --cal-cols）。
+   * 搜索时仍然回到普通列表 —— 搜索结果按相关度排，摊到日历上没意义。
+   * 空库也不走下面那个"空状态"分支：日历把格子画出来本身就是有用的信息。
+   */
+  const cal = results ? undefined : CAL[view]
+  $('list').classList.toggle('cal', !!cal)
+  if (cal) {
+    $('list').style.setProperty('--cal-cols', String(cal.cols))
+    renderDetail()
+    $('list').innerHTML = calendarGrid(visible, cal.days)
+    restoreScroll()
+    restoreTitleEdit()
+    return
+  }
   const groups = results
     ? [{ label: '', wd: '', items: results }]     // 搜索结果按相关度排，不按日期分组
     : group(visible, view)
@@ -407,6 +480,18 @@ function render() {
   }${g.items.map(t => row(t, doneList)).join('')}</section>`).join('')
   restoreScroll()
   restoreTitleEdit()
+}
+
+/**
+ * 切视图。除换列表内容，还要把窗口大小在"哪一屏"之间换一下：日历视图和其余视图
+ * 各记各的尺寸，切回去就是上次拖好的样子。主进程负责存取（见 window:switch）——
+ * 先把当前大小记到离开的那一屏，再套上要进的那一屏的。同一个分组之间切就不折腾窗口。
+ */
+function setView(next: ViewId) {
+  const from = slotOf(view), to = slotOf(next)
+  view = next
+  render()
+  if (from !== to) void kapi['window:switch'](to)
 }
 
 function row(t: Task, doneList = false): string {
@@ -437,6 +522,47 @@ function row(t: Task, doneList = false): string {
       first ? `<div class="notefirst">${esc(first)}</div>` : ''}</div>${
     time ? `<div class="when">${time}</div>` : ''}${
     rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}
+  </div>`
+}
+
+/** 日历视图整块：days + 1 格按天平铺，逾期占第一格 */
+function calendarGrid(list: Task[], days: number): string {
+  return calendarCells(list, days).map(c =>
+    // data-day：拖动改期时的落点靠它认。逾期那格是 'overdue'，只能当起手、不能当落点
+    `<section class="calcell${c.overdue ? ' overdue' : ''}${c.today ? ' today' : ''}" data-day="${c.key}">` +
+    `<div class="calhead"><span class="dl">${esc(c.label)}</span>` +
+    `<span class="ws">${c.wd ? `<span class="wd">${esc(c.wd)}</span>` : ''}` +
+    `${c.items.length ? `<span class="n">${c.items.length}</span>` : ''}</span></div>` +
+    (c.items.length
+      ? c.items.map(t => calRow(t, !!c.overdue)).join('')
+      // 空的一天给一道极淡的横杠：日历本来就常常是空的，别让人以为没画出来
+      : `<div class="calempty">–</div>`) +
+    `</section>`).join('')
+}
+
+/**
+ * 日历视图里的任务行。格子只有一百来像素宽，所以时间、重复标签挪到标题下面一行，
+ * 不跟标题抢宽度；其余（勾选、点开详情、点标题就地改名、右键菜单）和列表行完全一样 ——
+ * 都挂在 .task / .title / [data-act] 上，事件那套代码不用为这个视图分叉。
+ */
+function calRow(t: Task, overdue: boolean): string {
+  const clock = t.startAt !== undefined && !t.isAllDay ? hhmm(t.startAt) : ''
+  // 逾期那一格的表头只有"已逾期"，不带原来的日子就不知道拖了多久（和列表行同理）
+  const when = overdue && t.startAt !== undefined
+    ? [dayLabel(t.startAt), clock].filter(Boolean).join(' ')
+    : clock
+  const rep = t.repeat ? describeRepeat(t.repeat, lang) : ''
+  const meta = when || rep
+    ? `<div class="calmeta">${when ? `<span>${esc(when)}</span>` : ''}${
+        rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}</div>`
+    : ''
+  return `<div class="task calrow ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
+               leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
+    <button class="box ${t.completedAt ? 'done' : ''}"
+            data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>
+    <div class="body">${titleEditing === t.id
+      ? `<input class="titleedit" data-titleedit="${t.id}" value="${esc(t.title)}">`
+      : `<div class="title">${esc(t.title)}</div>`}${meta}</div>
   </div>`
 }
 
@@ -626,9 +752,128 @@ document.addEventListener('mousedown', (e) => {
   // 拦下默认行为：否则浏览器会在 mousedown 之后把焦点移到"被点的那个元素"上，
   // 而那个元素刚被 render() 换掉了 —— 焦点落到 body，输入框当场又被 focusout 关掉
   e.preventDefault()
+  // 日历格子里的标题要等 pointerup 才进编辑态：这中间可能变成一次"拖到别的天"，
+  // 一按下就进编辑的话，就没法从标题上起手拖了（见下面 pointerup 那段）
+  if (row.closest('.calcell')) return
   beginTitleEdit(row.dataset['task']!, e.clientX, e.clientY)
   actedOnMousedown = true
 })
+
+/* ── 日历视图：把任务从一天拖到另一天 ──
+ *
+ * 用 pointer 事件自己做，不上 HTML5 拖放：那一套和现有的 mousedown 交互（圆圈勾选、
+ * 点标题就地改名）抢同一个按下事件，而这个列表里"点一下"和"拖一下"必须共存 ——
+ * 按下先只记着，挪过 5px 才算拖，没挪就是一次普通的点。放下的目标按天走：
+ * 只换日期、保留原来的时刻（全天任务本来就是零点，拖完还是全天）。
+ */
+
+/** 判断是"点"还是"拖"的分界（像素）。太小会把点击误判成拖动 */
+const CAL_DRAG_MIN = 5
+type CalDrag = {
+  id: string
+  from: string                 // 起手那格的 data-day
+  x: number; y: number         // 按下时的光标位置
+  title: boolean               // 按在标题上：松手没挪就进改名
+  on: boolean                  // 已经挪过阈值，真的在拖了
+  drop: string | null          // 当前高亮的落点
+}
+let calDrag: CalDrag | null = null
+/** 刚拖完，压掉随之而来的那次 click（不然会顺手把任务选中、打开备注） */
+let suppressClick = false
+let dragGhost: HTMLElement | null = null
+
+/** 拖动时跟着光标走的那张小卡片，让"正在拖哪条"看得见 */
+function showGhost(id: string, x: number, y: number) {
+  dragGhost = document.createElement('div')
+  dragGhost.className = 'calghost'
+  dragGhost.textContent = tasks.find(t => t.id === id)?.title ?? ''
+  document.body.appendChild(dragGhost)
+  moveGhost(x, y)
+}
+function moveGhost(x: number, y: number) {
+  if (!dragGhost) return
+  dragGhost.style.left = `${x + 12}px`
+  dragGhost.style.top = `${y + 10}px`
+}
+/** 收尾：清掉所有拖动痕迹。指针在窗口外松手时指针事件收不到，所以窗口失焦也要清 */
+function endCalDrag() {
+  calDrag = null
+  dragGhost?.remove()
+  dragGhost = null
+  document.body.classList.remove('caldragging')
+  document.querySelectorAll('.calrow.dragging').forEach(r => r.classList.remove('dragging'))
+  document.querySelectorAll('.calcell.drop').forEach(c => c.classList.remove('drop'))
+}
+
+/** 光标底下那一格，以及它能不能当落点（逾期格不行 —— 它是好几天，不是一个日期） */
+function dropDayAt(x: number, y: number, from: string): { cell: HTMLElement; day: string } | null {
+  const cell = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.calcell')
+  const day = cell?.dataset['day']
+  if (!cell || !day || day === 'overdue' || day === from) return null
+  return { cell, day }
+}
+
+document.addEventListener('pointerdown', (e) => {
+  suppressClick = false
+  endCalDrag()                 // 上一次没收尾（指针在窗口外松手），先清干净
+  if (e.button !== 0) return
+  const target = e.target as HTMLElement
+  const row = target.closest<HTMLElement>('.calrow')
+  if (!row || target.closest('[data-act]')) return      // 圆圈还是走勾选那条路
+  const cell = row.closest<HTMLElement>('.calcell')
+  const day = cell?.dataset['day']
+  if (!day) return
+  calDrag = { id: row.dataset['task']!, from: day, x: e.clientX, y: e.clientY,
+              title: !!target.closest('.title'), on: false, drop: null }
+})
+
+document.addEventListener('pointermove', (e) => {
+  const d = calDrag
+  if (!d) return
+  if (!d.on) {
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < CAL_DRAG_MIN) return
+    d.on = true
+    document.body.classList.add('caldragging')
+    document.querySelector<HTMLElement>(`.calrow[data-task="${d.id}"]`)?.classList.add('dragging')
+    showGhost(d.id, e.clientX, e.clientY)
+  } else moveGhost(e.clientX, e.clientY)
+  const hit = dropDayAt(e.clientX, e.clientY, d.from)
+  const drop = hit?.day ?? null
+  if (drop === d.drop) return                    // 没换格子就不动 DOM，免得每动一下都重排
+  d.drop = drop
+  document.querySelectorAll('.calcell.drop').forEach(c => c.classList.remove('drop'))
+  if (hit) hit.cell.classList.add('drop')
+})
+
+document.addEventListener('pointerup', (e) => {
+  const d = calDrag
+  if (!d) return
+  const on = d.on, title = d.title, id = d.id, from = d.from
+  const hit = on ? dropDayAt(e.clientX, e.clientY, from) : null
+  endCalDrag()
+  if (!on) {
+    // 没挪 = 一次普通的点。点标题进就地编辑放到这里：按下时就进的话没法起手拖
+    if (title) { actedOnMousedown = true; beginTitleEdit(id, e.clientX, e.clientY) }
+    return
+  }
+  suppressClick = true
+  if (hit) void moveToDay(id, Number(hit.day))
+})
+window.addEventListener('blur', endCalDrag)      // 指针跑出窗口松手，收不到 pointerup
+
+/**
+ * 拖到另一天：只换日期，原来的时刻留着；全天任务本来就是零点，拖完还是全天。
+ * 写的还是 startAt 一个字段 —— 它在日历上落在哪一格，全是这个字段推出来的。
+ */
+async function moveToDay(id: string, day: number) {
+  const t = tasks.find(x => x.id === id)
+  if (!t || t.startAt === undefined) return
+  const src = new Date(t.startAt)
+  const dst = new Date(day)
+  dst.setHours(src.getHours(), src.getMinutes(), src.getSeconds(), src.getMilliseconds())
+  if (+dst === t.startAt) return
+  await kapi['task:setField'](id, 'startAt', +dst)
+}
 
 /**
  * 渲染出来的第 n 个字，对应 Markdown 源码里的哪个位置。
@@ -678,11 +923,13 @@ function caretOffsetAt(x: number, y: number): number | null {
 
 document.addEventListener('click', async (e) => {
   whenBusy = false        // 这次点完，允许 renderDetail 重建 dmeta
+  // 刚在日历里拖完一条：这次 click 是拖动收尾，不是"点选"，扔掉
+  if (suppressClick) { suppressClick = false; return }
   // mousedown 里已经处理完的（勾选、进入改标题），click 不要再来一遍
   if (actedOnMousedown) { actedOnMousedown = false; return }
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
-  if (nav) { view = nav.dataset['view'] as ViewId; render(); return }
+  if (nav) { setView(nav.dataset['view'] as ViewId); return }
   if (target.id === 'dclear' && selected) {
     // 走和"手动把时间框清空"完全同一条路：日期不动，任务变成全天
     ;($('dtime') as HTMLInputElement).value = ''
@@ -895,8 +1142,7 @@ async function switchVault(id: string) {
     vault = await kapi['vault:open'](id)
     tasks = await kapi['task:list']()
     ;($('vaultsheet') as HTMLElement).hidden = true
-    view = DEFAULT_VIEW
-    render()
+    setView(DEFAULT_VIEW)
   } catch (e) {
     // 失败就把原因写在那一行上，别把面板关掉
     const pt = document.querySelector(`[data-vault="${id}"] .pt`) as HTMLElement | null
@@ -924,8 +1170,7 @@ $('vaultadd').addEventListener('click', async () => {
   vault = v
   tasks = await kapi['task:list']()
   ;($('vaultsheet') as HTMLElement).hidden = true
-  view = DEFAULT_VIEW
-  render()
+  setView(DEFAULT_VIEW)
 })
 
 /** 详情栏里的标题就地编辑。回车或失焦保存，esc 还原；不接受清空 */
@@ -1148,6 +1393,8 @@ async function boot() {
   applyDetailW()
   // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
   theme = await kapi['ui:theme']()
+  // 版本号也要 —— applyStatic 要把它写到左下角那个按钮上
+  version = await kapi['app:version']()
   setLang(await kapi['ui:lang']())
   vault = await kapi['vault:state']()
   ready = true

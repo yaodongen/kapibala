@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.7.1 — 2026-09-25
+
+- Added two tiled calendar views (7d and 14d) that lay the days out as cells with overdue in its own cell, and you can drag a task from one day to another to reschedule it; the bottom-left corner now shows the version number (clicking it opens the log), and window size is remembered separately for each calendar view.
+- 新增两个平铺的日历视图（7d / 14d），逾期单独占一格，可以把任务从一天拖到另一天改期；左下角显示版本号（点它就是查看日志），窗口大小按视图分别记住。
+
 ## 1.7.0 — 2026-09-15
 
 - Finishing a recurring task now moves the detail pane on to the next occurrence once the finished one has faded out of the list, and the divider between the list and the detail pane can be dragged to widen it — the width is remembered in `ui.json`.

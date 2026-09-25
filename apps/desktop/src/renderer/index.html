@@ -98,6 +98,52 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
    "点一下列表自己往上跑"。滚动位置改由 app.ts 的 keepScroll() 自己钉 */
 .list{flex:1; overflow-y:auto; padding:0 28px 40px; overflow-anchor:none}
 
+/* ── 日历视图：按天铺成格子，列数由 app.ts 写进 --cal-cols ──
+   7d 是 4 列 × 2 行（逾期 + 7 天 = 8 格），14d 是 5 列 × 3 行（15 格）。
+   第一格固定是已逾期，其余按天排。格子跟着列表区宽度平分，列总是并排 ——
+   窗口窄了每格就窄一点，不横向滚；行放不下就整块上下滚。
+   底部留半屏空白：最后一行才能滚到窗口中间来看，而不是贴在最底下 */
+.list.cal{ display:grid; grid-template-columns:repeat(var(--cal-cols, 4), minmax(0, 1fr));
+           gap:16px 14px; align-content:start; align-items:start;
+           padding:12px 20px 50vh; overflow:auto }
+.calcell{ min-width:0; display:flex; flex-direction:column; gap:1px }
+.calhead{
+  display:flex; flex-direction:column; gap:1px;
+  padding:5px 8px 4px; margin:0 0 4px;
+  border-bottom:1px solid var(--border);
+  font-size:12px; font-weight:600; color:var(--dim); letter-spacing:.02em;
+}
+.calhead .dl{ color:var(--text) }
+/* 第二行：周几 + 条数。格子窄（14d 只有 90 来像素），和日期挤一行会折得七零八落，
+   索性固定分两行，每格的表头高度才对得齐 */
+.calhead .ws{ display:flex; align-items:baseline; gap:6px; font-size:11px; font-weight:400 }
+.calhead .n{ font-variant-numeric:tabular-nums }
+/* 逾期那格和"今天"那格各给一个颜色，一眼能找到自己站在哪 */
+.calcell.overdue .calhead{ color:var(--danger) }
+.calcell.overdue .calhead .dl{ color:var(--danger) }
+.calcell.today .calhead{ border-bottom-color:var(--accent) }
+.calcell.today .calhead .dl{ color:var(--accent) }
+/* 空的一天：一道极淡的横杠。日历空着很正常，别让人以为这格没画出来 */
+.calempty{ padding:6px 8px; color:var(--dim); opacity:.35; font-size:12px }
+/* ── 日历里拖动改期 ──
+   拖动时整窗都是抓手；被拖的那行淡下去，光标底下那天的格子亮起来当落点提示 */
+body.caldragging, body.caldragging *{ cursor:grabbing !important }
+.calrow.dragging{ opacity:.4 }
+.calcell.drop{ background:var(--accent-soft); border-radius:8px }
+/* 跟着光标走的小卡片。pointer-events:none 很关键 —— 否则 elementFromPoint
+   找到的是它，落点就永远算在那张卡片上 */
+.calghost{
+  position:fixed; z-index:80; pointer-events:none; max-width:220px;
+  padding:4px 8px; border-radius:7px; background:var(--bg); border:1px solid var(--border);
+  box-shadow:var(--shadow); color:var(--text); font-size:12px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+/* 格子里的行更窄：时间和重复标签挪到标题下面一行，不跟标题抢宽度 */
+.calrow{ padding:5px 8px; margin:0; gap:8px }
+.calmeta{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px;
+          font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums }
+.calmeta .tag.rep{ margin:0; padding:0 4px; font-size:10.5px }
+
 /* ── 分组 ── */
 .group{margin-top:18px}
 .ghead{
@@ -316,6 +362,10 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .logbtn{ border:none; background:none; font:inherit; font-size:11px; color:var(--dim);
          padding:2px 0; cursor:default; text-decoration:underline; text-underline-offset:2px }
 .logbtn:hover{ color:var(--text) }
+/* 左下角那个版本号：既能看版本、点开又是日志，所以不做成下划线链接的样子，
+   悬浮时才提示"这里可以点" */
+.verbtn{ text-decoration:none; font-variant-numeric:tabular-nums }
+.verbtn:hover{ text-decoration:underline }
 .sheet{ position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.28);
         display:flex; align-items:center; justify-content:center; padding:34px 24px 24px }
 .sheet-box{ background:var(--bg); border-radius:12px; box-shadow:0 18px 50px rgba(0,0,0,.28);
@@ -402,7 +452,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
     <input type="search" id="search" autocomplete="off">
     <nav id="nav"></nav>
     <div class="sidefoot">
-      <button class="logbtn" id="logbtn" data-log></button>
+      <!-- 左下角显示版本号，点它就是看日志（文案由 app.ts 的 applyStatic 填） -->
+      <button class="logbtn verbtn" id="verbtn" data-log></button>
       <button class="logbtn" id="langbtn" data-lang></button>
     </div>
   </aside>

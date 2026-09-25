@@ -1,10 +1,11 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from 'electron'
 import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, type TaskDraftIpc, type Theme, type VaultState } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, isWinSlot, type TaskDraftIpc, type Theme, type VaultState,
+         type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -24,12 +25,67 @@ let quitting = false
  * 那个文件是和 CLI 共享的库注册表，别混进界面的东西。
  */
 const uiFile = () => `${env.userDataDir}/ui.json`
-type UiState = { lastTask?: Record<string, string>; lang?: Lang; theme?: Theme; detailWidth?: number }
+type UiState = {
+  lastTask?: Record<string, string>
+  lang?: Lang
+  theme?: Theme
+  detailWidth?: number
+  /** 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot */
+  winSize?: Partial<Record<WinSlot, [number, number]>>
+}
 function readUi(): UiState {
   try { return JSON.parse(readFileSync(uiFile(), 'utf8')) as UiState } catch { return {} }
 }
 function writeUi(ui: UiState) {
   try { writeFileSync(uiFile(), JSON.stringify(ui, null, 2) + '\n') } catch (e) { log('error', '写界面状态失败', e) }
+}
+
+/* ── 窗口大小：按视图分组记 ──
+ * 日历铺的是格子，要的地方和列表不一样，所以 7d / 14d 各记一套，其余视图共用一份。
+ * 切视图时主进程负责"先存旧的、再套新的"，用户手动拖的窗口大小按当前那一屏落盘。
+ */
+/** 窗口的最小尺寸，和建窗口时的 minWidth/minHeight 是一个数 */
+const MIN_W = 820, MIN_H = 420
+/** 默认大小。216 侧栏 + 554 列表 + 340 备注 */
+const DEFAULT_W = 1110, DEFAULT_H = 640
+/** 当前窗口大小算哪一屏的。切视图时更新，窗口被拖动时按它落盘 */
+let winSlot: WinSlot = 'other'
+let winSaveTimer: NodeJS.Timeout | null = null
+
+/** 把尺寸夹进"最小尺寸 ~ 当前屏幕可用区域"：记下来的值可能来自更大的屏幕 */
+function fitToScreen(w: number, h: number, bounds?: Electron.Rectangle): [number, number] {
+  const area = (bounds ? screen.getDisplayMatching(bounds) : screen.getPrimaryDisplay()).workAreaSize
+  return [Math.max(MIN_W, Math.min(Math.round(w), area.width)),
+          Math.max(MIN_H, Math.min(Math.round(h), area.height))]
+}
+
+/** 把当前窗口大小记到 winSlot 那一屏。最大化/全屏时取的是"正常状态"的尺寸 */
+function rememberWinSize() {
+  if (!win || win.isDestroyed()) return
+  const { width, height } = win.getNormalBounds()
+  const ui = readUi()
+  writeUi({ ...ui, winSize: { ...ui.winSize, [winSlot]: [width, height] } })
+}
+
+/**
+ * 切到 to 那一屏：先把当前大小记到离开的那一屏，再套上 to 记过的大小。
+ * 位置尽量不动，但放大后不能顶出屏幕 —— 贴边时往回挪一点，别让标题栏跑到屏幕外。
+ */
+function switchWinSlot(to: WinSlot): [number, number] | null {
+  if (winSaveTimer) { clearTimeout(winSaveTimer); winSaveTimer = null }
+  rememberWinSize()
+  winSlot = to
+  const saved = readUi().winSize?.[to]
+  if (!saved || !win || win.isDestroyed()) return null
+  const b = win.getBounds()
+  const area = screen.getDisplayMatching(b).workArea
+  const [w, h] = fitToScreen(saved[0], saved[1], b)
+  win.setBounds({
+    x: Math.max(area.x, Math.min(b.x, area.x + area.width - w)),
+    y: Math.max(area.y, Math.min(b.y, area.y + area.height - h)),
+    width: w, height: h,
+  })
+  return [w, h]
 }
 
 /**
@@ -323,6 +379,12 @@ handle('ui:setDetailWidth', (w: number) => {
   return width
 })
 
+handle('window:switch', (to: WinSlot) => {
+  if (!isWinSlot(to)) throw new Error(`不认识的窗口分组：${String(to)}`)
+  return switchWinSlot(to)
+})
+handle('app:version', () => app.getVersion())
+
 handle('log:read', () => ({ text: readLog(), path: logPath() }))
 handle('log:copy', () => { clipboard.writeText(readLog()) })
 handle('log:reveal', () => { shell.showItemInFolder(logPath()) })
@@ -385,9 +447,11 @@ function openExternal(url: string) {
 }
 
 function createWindow() {
+  // 启动一律停在列表视图（渲染进程的 DEFAULT_VIEW），所以第一屏用"其余视图"那套尺寸
+  const saved = readUi().winSize?.['other']
+  const [w, h] = saved ? fitToScreen(saved[0], saved[1]) : [DEFAULT_W, DEFAULT_H]
   win = new BrowserWindow({
-    // 备注栏常驻，默认宽度把它算进去了：216 侧栏 + 554 列表 + 340 备注
-    width: 1110, height: 640, minWidth: 820, minHeight: 420,
+    width: w, height: h, minWidth: MIN_W, minHeight: MIN_H,
     titleBarStyle: 'hiddenInset',
     // 跟着主题走：页面还没画出来时露的就是它，深色下不能是奶油色
     backgroundColor: windowBg(),
@@ -397,6 +461,12 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
     },
+  })
+  // 用户手动拖出来的大小，记在当前这一屏名下。防抖：拖的过程中一直在变，
+  // ui.json 是整份重写，没必要每一帧都落盘
+  win.on('resize', () => {
+    if (winSaveTimer) clearTimeout(winSaveTimer)
+    winSaveTimer = setTimeout(() => { winSaveTimer = null; rememberWinSize() }, 400)
   })
   win.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: 'deny' } })
   // 备注里的链接是普通的 <a>，点一下会把整个窗口导航走 —— 应用当场变成一个网页，
@@ -452,6 +522,9 @@ app.on('window-all-closed', () => { /* 后台继续跑，见 createWindow 里的
 
 app.on('before-quit', () => {
   quitting = true
+  // 刚拖完窗口就退出的话，防抖那 400ms 还没到 —— 这里补一次，别把最后那次改动丢了
+  if (winSaveTimer) { clearTimeout(winSaveTimer); winSaveTimer = null }
+  rememberWinSize()
   watcher?.close()
   log('info', '退出')
 })
