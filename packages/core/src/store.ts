@@ -139,6 +139,10 @@ export class Store {
         { id: occ.id, f: 'seriesId', val: occ.seriesId },
       )
       if (t.notes !== undefined) fields.push({ id: occ.id, f: 'notes', val: t.notes })
+      // 「重要」跟着系列往后走：勾完成时下一个实例继承它，之后每派生一次都再传下去，
+      // 所以定成周期任务的那条重要任务会一直保持高亮。不重要就不写这条 ——
+      // 派生出来的实例本来就是不重要（旧数据里没这个字段，同理）
+      if (t.important) fields.push({ id: occ.id, f: 'important', val: true })
     }
     await this.write(fields)
     if (occ) next = this.task(occ.id) ?? null

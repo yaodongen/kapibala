@@ -69,7 +69,7 @@ const ZH = {
    * 它只是徽标，右键菜单里仍然是中文的"进行中 / 取消进行中"
    */
   inProgress: 'Doing',
-  unmarkInProgress: '取消进行中',
+  unmarkInProgress: '取消 Doing',
   noRepeat: '不重复',
   repeatCustom: '自定义天数…',
   customEvery: '每',
@@ -149,9 +149,13 @@ const ZH = {
   pickButton: '使用这个文件夹',
   pickFailed: '这个文件夹不能用作库',
   ok: '好',
-  menuNotes: '备注',
-  menuComplete: '完成',
-  menuUncomplete: '标记为未完成',
+  /**
+   * 右键菜单里"进行中"那一项的文案。中英文都带上 Doing —— 和行上那个徽标同一个词，
+   * 点下去任务行上会出现什么，菜单里就先写着什么
+   */
+  menuInProgress: '标记 Doing',
+  menuImportant: '标记重要',
+  menuUnimportant: '取消重要',
   menuDelete: '删除',
   menuRestore: '恢复',
   menuPurge: '彻底删除',
@@ -196,7 +200,7 @@ const EN: typeof ZH = {
 
   addPlaceholder: 'Add a task, press ⏎',
   inProgress: 'Doing',
-  unmarkInProgress: 'Clear in progress',
+  unmarkInProgress: 'Unmark Doing',
   noRepeat: 'No repeat',
   repeatCustom: 'Every N days…',
   customEvery: 'Every',
@@ -268,9 +272,9 @@ const EN: typeof ZH = {
   pickButton: 'Use this folder',
   pickFailed: 'This folder cannot be used as a vault',
   ok: 'OK',
-  menuNotes: 'Notes',
-  menuComplete: 'Complete',
-  menuUncomplete: 'Mark as not done',
+  menuInProgress: 'Mark Doing',
+  menuImportant: 'Mark as important',
+  menuUnimportant: 'Clear important',
   menuDelete: 'Delete',
   menuRestore: 'Restore',
   menuPurge: 'Delete for good',

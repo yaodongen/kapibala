@@ -53,6 +53,28 @@ export type WinSlot = 'other' | 'calendar7' | 'calendar14'
 export const WIN_SLOTS: readonly WinSlot[] = ['other', 'calendar7', 'calendar14']
 export const isWinSlot = (x: unknown): x is WinSlot => WIN_SLOTS.includes(x as WinSlot)
 
+/**
+ * 侧栏那 8 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
+ * 主进程要用它校验 ui.json 里存下的值（那个文件可能被手改，也可能是旧版本写的，
+ * 读回来不能直接当合法视图用），窗口大小也要按视图分组。
+ */
+export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'all', 'done', 'trash'] as const
+export type ViewId = typeof VIEW_IDS[number]
+export const isViewId = (x: unknown): x is ViewId => VIEW_IDS.includes(x as ViewId)
+
+/**
+ * 视图 → 窗口大小分组。两个日历视图各占一屏，其余共用 'other'。
+ * 渲染进程切视图和主进程建窗口都按这个映射走，别各写一份。
+ */
+export const viewSlot = (v: ViewId): WinSlot => (v === 'calendar7' || v === 'calendar14' ? v : 'other')
+
+/**
+ * 值得"下次打开还停在这儿"的列表。已完成和垃圾桶是顺路看一眼就走的地方，
+ * 退出时停在那儿不该变成下一次的落脚点 —— 记进去也没用，读的时候当没存过。
+ */
+export const RESTORABLE_VIEWS: readonly ViewId[] = ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'all']
+export const isRestorableView = (x: unknown): x is ViewId => RESTORABLE_VIEWS.includes(x as ViewId)
+
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
 export type Commands = {
   'vault:state': () => VaultState
@@ -99,6 +121,13 @@ export type Commands = {
   /** 记下这个开关。返回存进去的值 */
   'ui:setShowDone': (on: boolean) => boolean
   /**
+   * 上次停在哪个列表，打开就回到那一屏（没存过 = 渲染进程的 DEFAULT_VIEW）。
+   * 已完成 / 垃圾桶不记，所以返回的一定是 RESTORABLE_VIEWS 里的一个
+   */
+  'ui:view': () => ViewId | null
+  /** 记下当前列表。已完成 / 垃圾桶不记（见 RESTORABLE_VIEWS），传进来就当没发生 */
+  'ui:setView': (view: ViewId) => void
+  /**
    * 切到某一屏（视图分组）。主进程先把当前窗口大小记到**离开**的那一屏，
    * 再按 to 这屏记过的大小调窗口。返回实际调成的尺寸；这屏没记过就是 null（窗口不动）
    */
@@ -115,8 +144,6 @@ export type Commands = {
 export type Events = {
   /** 本机改动或别的 Mac 同步过来的改动，都从这里推 */
   'tasks:changed': (tasks: Task[]) => void
-  /** 右键菜单里选了"备注"，让界面把这条任务的详情栏打开 */
-  'task:show': (id: string) => void
   /** 正在读别的设备同步过来的改动。界面据此挡住编辑，读完自动放开 */
   'sync:busy': (busy: boolean) => void
   /** 系统外观变了（或自己被 ui:setTheme 改了）。开关跟着挪，CSS 那边由媒体查询自己刷 */
@@ -127,7 +154,8 @@ export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:setMany', 'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
-  'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone', 'window:switch', 'app:version',
+  'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone', 'ui:view', 'ui:setView',
+  'window:switch', 'app:version',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
 
@@ -135,7 +163,6 @@ export type Api = {
   [K in keyof Commands]: (...a: Parameters<Commands[K]>) => Promise<ReturnType<Commands[K]>>
 } & {
   onTasksChanged(cb: (tasks: Task[]) => void): void
-  onShowTask(cb: (id: string) => void): void
   onSyncBusy(cb: (busy: boolean) => void): void
   onThemeChanged(cb: (theme: Theme) => void): void
 }

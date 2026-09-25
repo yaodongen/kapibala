@@ -87,6 +87,60 @@ describe('周期任务', () => {
     const series = a.tasks().filter(t => t.seriesId === id)
     expect(series).toHaveLength(1)                // 确定性 ID → 不会分叉
   })
+
+  it('重要的周期任务，派生出来的下一次也重要（一路传下去）', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '体检', startAt: +new Date('2026-08-25T09:00:00'), repeat: { freq: 'WEEKLY' } })
+    await s.setField(id, 'important', true)
+
+    const next = await s.complete(id)
+    expect(next!.important).toBe(true)            // 第一个派生实例继承
+
+    const third = await s.complete(next!.id)
+    expect(third!.important).toBe(true)           // 再派生一次，仍然带着
+  })
+
+  it('不重要的周期任务，派生出来的一次也不重要', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '周会', startAt: +new Date('2026-08-25T09:00:00'), repeat: { freq: 'WEEKLY' } })
+    const next = await s.complete(id)
+    expect(next!.important).toBe(false)
+  })
+})
+
+describe('重要', () => {
+  it('标记、取消标记；没标记过的默认不重要（旧数据也一样）', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '交房租' })
+    expect(s.task(id)!.important).toBe(false)
+
+    await s.setField(id, 'important', true)
+    expect(s.task(id)!.important).toBe(true)
+
+    await s.setField(id, 'important', false)
+    expect(s.task(id)!.important).toBe(false)
+  })
+
+  it('删进垃圾桶、再恢复，重要的标记都留着', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '交房租' })
+    await s.setField(id, 'important', true)
+    await s.trash(id)
+    expect(s.task(id)!.important).toBe(true)
+    await s.restore(id)
+    expect(s.task(id)!.important).toBe(true)
+  })
+
+  it('多设备合并：跟着字段级 LWW 走', async () => {
+    const fs = new MemFs()
+    const a = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua' }), V, true)
+    const id = await a.add({ title: '交房租' })
+    const b = await Store.open(memEnv({ fs, machineId: 'MACHINE-B', userDataDir: '/ub' }), V)
+
+    await a.setField(id, 'important', true)
+    await b.refresh()
+    expect(b.task(id)!.important).toBe(true)
+  })
 })
 
 describe('进行中', () => {

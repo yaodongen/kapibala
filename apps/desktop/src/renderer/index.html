@@ -12,6 +12,9 @@
   color-scheme: light dark;
   --bg:#ffffff; --sidebar:#f5f5f7; --border:#e3e3e6; --text:#1d1d1f;
   --dim:#86868b; --accent:#8b6f47; --accent-soft:#f0e9df; --danger:#d93025;
+  /* 「重要」左侧那道竖条的颜色（底色由它掺出来的极淡红）。比 --danger 暖一点、
+     也没那么"报错"，因为它是个常驻的标记 */
+  --important:#d9574a;
   /* 压在强调色/危险色上的文字色。深色主题的 --accent 是浅棕，白字只有 2.4:1，
      得反过来用深色字才看得清 */
   --on-accent:#ffffff; --on-danger:#ffffff;
@@ -21,6 +24,7 @@
   :root{
     --bg:#1e1e20; --sidebar:#252528; --border:#35353a; --text:#f2f2f4;
     --dim:#8e8e93; --accent:#c8a273; --accent-soft:#33302b; --danger:#ff6b5e;
+    --important:#e2796d;
     --on-accent:#1e1e20; --on-danger:#1e1e20;
     --row-hover:#2a2a2e; --shadow:0 1px 3px rgba(0,0,0,.3);
   }
@@ -134,9 +138,7 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
 .task.dragging{ opacity:.4 }
 [data-day].drop{ background:var(--accent-soft); border-radius:8px }
 /* 插入线用 inset 阴影，不用 ::before —— 行是 flex，插个伪元素会挤到行首去。
-   .task.drop-* 两个类，优先级也压得过 .task 那条 */
-.task.drop-before{ box-shadow:inset 0 2px 0 var(--accent) }
-.task.drop-after{ box-shadow:inset 0 -2px 0 var(--accent) }
+   这两条规则本身挪到了下面「重要」那段之后，理由写在那儿 */
 /* 跟着光标走的小卡片。pointer-events:none 很关键 —— 否则 elementFromPoint
    找到的是它，落点就永远算在那张卡片上 */
 .calghost{
@@ -249,6 +251,25 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
 }
 .task.doing:hover{ background:var(--accent-soft) }
 .task.doing .title{ font-weight:600 }
+
+/* ── 重要：左侧一道红竖条 + 极淡红底（普通列表行和日历格子里的行都画） ──
+   和上面的「进行中」同一套画法：底色 + inset 阴影，不用 border ——
+   加边框会把行撑高一点，一列行的高矮就不齐了。
+   一条任务同时"重要"又"进行中"时这里赢（同样两段式，写在后面）：红色竖条只留一道，
+   "进行中"还有右边那个徽标和加粗的标题，信息不会丢 */
+.task.important{
+  background:color-mix(in srgb, var(--important) 9%, transparent);
+  box-shadow:inset 3px 0 0 var(--important);
+}
+/* 悬浮时把底色加深一档，才看得出鼠标停在这行上。.task:hover 和 .task.important
+   同优先级、靠写在后面才压得过，所以这条必须自己带上 :hover */
+.task.important:hover{ background:color-mix(in srgb, var(--important) 15%, transparent) }
+
+/* 拖动的插入线。必须写在上面 .doing / .important **之后**：那两行也用 box-shadow
+   画左侧竖条，同优先级下后出现的赢 —— 写在前头的话，被拖过的重要任务会把
+   这根落点提示整个盖掉，看着像"放不进去" */
+.task.drop-before{ box-shadow:inset 0 2px 0 var(--accent) }
+.task.drop-after{ box-shadow:inset 0 -2px 0 var(--accent) }
 
 /* ── 右侧详情栏 ── */
 .detailpane{ border-left:1px solid var(--border); display:flex; flex-direction:column;

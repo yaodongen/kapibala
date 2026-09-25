@@ -4,8 +4,8 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, isWinSlot, type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState,
-         type WinSlot } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, viewSlot, type FieldOpIpc,
+         type TaskDraftIpc, type Theme, type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -32,6 +32,8 @@ type UiState = {
   detailWidth?: number
   /** 日历视图是否显示"当天已完成"的任务。没存过 = 关 */
   showDone?: boolean
+  /** 上次停在哪个列表，打开就回到那一屏。已完成 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
+  view?: ViewId
   /** 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot */
   winSize?: Partial<Record<WinSlot, [number, number]>>
 }
@@ -316,12 +318,14 @@ handle('task:menu', (id: string) => {
         { label: L.menuPurge, click: () => void write(s => s.purge(id)) },
       ]
     : [
-        { label: L.menuNotes, click: () => win?.webContents.send('task:show', id) },
-        { type: 'separator' },
-        { label: t.inProgress ? L.unmarkInProgress : L.inProgress,
+        // 非删除那一支只有这几项：备注在详情栏写、完成在列表的圆圈上点，
+        // 同一个动作不留第二个入口 —— 右键菜单只放任务自己的属性和删除
+        // 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），和"进行中"那种
+        // 临时状态不是一回事，所以放在最前面
+        { label: t.important ? L.menuUnimportant : L.menuImportant,
+          click: () => void write(s => s.setField(id, 'important', !t.important)) },
+        { label: t.inProgress ? L.unmarkInProgress : L.menuInProgress,
           click: () => void write(s => s.setField(id, 'inProgress', !t.inProgress)) },
-        { label: t.completedAt ? L.menuUncomplete : L.menuComplete,
-          click: () => void write(s => (t.completedAt ? s.uncomplete(id) : s.complete(id).then(() => undefined))) },
         { type: 'separator' },
         { label: L.menuDelete, click: () => void write(s => s.trash(id)) },
       ]
@@ -388,6 +392,21 @@ handle('ui:setShowDone', (on: boolean) => {
   if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
   writeUi({ ...readUi(), showDone: on })
   return on
+})
+
+/**
+ * 上次停在哪个列表。存下来的值可能来自旧版本、也可能被手改过，所以只认
+ * RESTORABLE_VIEWS 里那几个 —— 读不出来就返回 null，渲染进程退回自己的默认视图。
+ */
+handle('ui:view', () => {
+  const saved = readUi().view
+  return isRestorableView(saved) ? saved : null
+})
+/** 切列表就记一笔。已完成 / 垃圾桶不记：那是顺路看一眼的地方，不该变成下次的落脚点 */
+handle('ui:setView', (next: ViewId) => {
+  if (!isViewId(next)) throw new Error(`不认识的列表：${String(next)}`)
+  if (!isRestorableView(next)) return
+  writeUi({ ...readUi(), view: next })
 })
 
 handle('window:switch', (to: WinSlot) => {
@@ -459,8 +478,12 @@ function openExternal(url: string) {
 }
 
 function createWindow() {
-  // 启动一律停在列表视图（渲染进程的 DEFAULT_VIEW），所以第一屏用"其余视图"那套尺寸
-  const saved = readUi().winSize?.['other']
+  // 打开就回到上次那一屏列表（渲染进程 boot() 会跟着落到同一个视图），所以第一屏的尺寸
+  // 也用那一屏记下的 —— 否则窗口先按列表大小画出来，等渲染进程报上来再跳一下。
+  // 没记过或者记的是已完成 / 垃圾桶，就还是"其余视图"那套尺寸
+  const start = readUi().view
+  winSlot = isRestorableView(start) ? viewSlot(start) : 'other'
+  const saved = readUi().winSize?.[winSlot]
   const [w, h] = saved ? fitToScreen(saved[0], saved[1]) : [DEFAULT_W, DEFAULT_H]
   win = new BrowserWindow({
     width: w, height: h, minWidth: MIN_W, minHeight: MIN_H,

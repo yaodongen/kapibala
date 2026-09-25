@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.9.0 — 2026-09-25
+
+- The app reopens on the list you left it on — Today, Next 7 days, Next 30 days, Calendar 7d, Calendar 14d or All, remembered in `ui.json`, with the window size for that view; Completed and Trash are never remembered, and switching vaults keeps you on the same list. A task can be marked important from the right-click menu, which gives its row a red bar and a faint red tint in both the list and the calendar, and the next occurrence of a recurring task inherits the mark. The right-click menu drops Notes and Complete (notes live in the detail pane, completing is the circle at the start of the row) and the Doing item now reads Mark Doing / Unmark Doing.
+- 打开会回到上次停的那个列表（今天 / 最近 7 天 / 最近 30 天 / 日历 7d / 日历 14d / 全部，连同那一屏的窗口大小记进 `ui.json`；已完成和垃圾桶不记，切库也沿用同一屏）；任务可以标记为「重要」，列表和日历里那一行给左侧一道红竖条加极淡红底，周期任务勾完成时派生的下一个实例继承这个标记；右键菜单去掉「备注」和「完成」（备注在详情栏写、完成点行首的圆圈），「Doing」改叫「标记 Doing / 取消 Doing」。
+
 ## 1.8.1 — 2026-09-25
 
 - Tasks can be reordered by dragging: in a calendar cell or in a date group in the list, drop the row where you want it and a 2px line shows exactly which task it will land in front of; dragging it onto another day reschedules it and puts it at that spot, the list scrolls by itself when you drag near its edge, and a newly added task goes to the end of its day instead of into the middle of a hand-sorted list.

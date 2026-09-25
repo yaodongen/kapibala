@@ -434,6 +434,7 @@ type Task = {
   repeat?: RepeatRule     // 见 §7.2
   order: string           // 分数索引，见 §7.3
   inProgress: boolean     // 正在做。和 completedAt 无关，可以同时有多条
+  important: boolean      // 重要。界面给左侧一道红竖条 + 极淡红底；周期任务派生下一个实例时继承它
   completedAt?: number
   createdAt: number
   _deleted?: true         // tombstone，进垃圾桶

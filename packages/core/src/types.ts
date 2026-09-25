@@ -75,6 +75,8 @@ export type Task = {
   order: string
   /** 正在做。和"完成"无关：可以同时有好几条在进行中，勾完成时自动清掉 */
   inProgress: boolean
+  /** 重要。列表和日历里给左侧一道红竖条 + 极淡红底。周期任务勾完成时，派生的下一个实例会继承它 */
+  important: boolean
   completedAt?: number
   createdAt: number
   seriesId?: string          // 周期任务的系列 ID

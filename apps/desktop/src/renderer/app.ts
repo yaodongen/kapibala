@@ -9,8 +9,8 @@ import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import { DEFAULT_DETAIL_WIDTH, type Api, type FieldOpIpc, type Theme, type VaultState,
-         type WinSlot } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, viewSlot, type Api, type FieldOpIpc, type Theme, type VaultState,
+         type ViewId } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -53,7 +53,10 @@ const dayLabel = (ts: number) => {
 }
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
-/** 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐 */
+/**
+ * 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐。
+ * id 那一层在 ipc 里（主进程要拿它校验 ui.json、分窗口大小），这里只管怎么画。
+ */
 const VIEWS = [
   { id: 'today', ico: '☀', sub: () => S.todaySub(dayLabel(today()), weekday(today())) },
   { id: 'next7', ico: '▤', sub: () => S.next7Sub },
@@ -63,8 +66,7 @@ const VIEWS = [
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
-] as const
-type ViewId = typeof VIEWS[number]['id']
+] as const satisfies readonly { id: ViewId; ico: string; sub: () => string }[]
 
 /**
  * 两个日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
@@ -78,14 +80,12 @@ const CAL: Partial<Record<ViewId, { days: number; cols: number }>> = {
 
 let tasks: Task[] = []
 let vault: VaultState | null = null
-/** 打开就停在这个视图：只看今天容易漏掉马上要到的事，一周的视野更实用 */
+/**
+ * 没记过偏好时的默认视图：只看今天容易漏掉马上要到的事，一周的视野更实用。
+ * 平时打开会回到上次停的那一屏（ui.json 里的 view，见 boot 和 setView）。
+ */
 const DEFAULT_VIEW: ViewId = 'next7'
 let view: ViewId = DEFAULT_VIEW
-/**
- * 窗口大小按哪一屏记：两个日历视图各记各的，其余视图共用一份（见 ipc 里的 WinSlot）。
- * 日历铺的是格子，要的地方和列表不一样，所以分开记 —— 切回日历就是上次拖好的大小。
- */
-const slotOf = (v: ViewId): WinSlot => (v === 'calendar7' || v === 'calendar14' ? v : 'other')
 /**
  * 日历视图要不要显示"当天已完成"的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
  * 打开后已完成的任务按**完成那天**归格，不是它原来安排在哪天（见 pick / calendarCells）。
@@ -559,11 +559,15 @@ function render() {
  * 切视图。除换列表内容，还要把窗口大小在"哪一屏"之间换一下：日历视图和其余视图
  * 各记各的尺寸，切回去就是上次拖好的样子。主进程负责存取（见 window:switch）——
  * 先把当前大小记到离开的那一屏，再套上要进的那一屏的。同一个分组之间切就不折腾窗口。
+ *
+ * 顺便把这一屏记进 ui.json，下次打开就落在这儿。已完成 / 垃圾桶主进程不记
+ * （见 ipc 的 RESTORABLE_VIEWS），所以退出时停在那两屏不会改掉落脚点。
  */
 function setView(next: ViewId) {
-  const from = slotOf(view), to = slotOf(next)
+  const from = viewSlot(view), to = viewSlot(next)
   view = next
   render()
+  void kapi['ui:setView'](next)
   if (from !== to) void kapi['window:switch'](to)
 }
 
@@ -583,6 +587,7 @@ function row(t: Task, doneList = false): string {
     : (t.notes?.trim() ? notePreview(t.notes, 46) : '')
   return `<div class="task ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
                t.inProgress ? 'doing' : ''} ${
+               t.important ? 'important' : ''} ${
                leaving.has(t.id) ? 'leaving' : ''}" data-task="${t.id}">
     ${doneList
       // 已完成列表：整行最左边是"几点几分完成的"，日期在分组标题上。
@@ -644,6 +649,7 @@ function calRow(t: Task, cell: CalCell): string {
   const fading = !showDone && leaving.has(t.id)
   return `<div class="task calrow ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
                t.inProgress ? 'doing' : ''} ${
+               t.important ? 'important' : ''} ${
                fading ? 'leaving' : ''}" data-task="${t.id}">
     <button class="box ${t.completedAt ? 'done' : ''}"
             data-act="${t.completedAt ? 'task:uncomplete' : 'task:complete'}" data-id="${t.id}"></button>${
@@ -1425,7 +1431,8 @@ async function switchVault(id: string) {
     vault = await kapi['vault:open'](id)
     tasks = await kapi['task:list']()
     ;($('vaultsheet') as HTMLElement).hidden = true
-    setView(DEFAULT_VIEW)
+    // 切库不换列表：停在哪一屏是全局偏好（用户选的），换个库接着看同一屏
+    render()
   } catch (e) {
     // 失败就把原因写在那一行上，别把面板关掉
     const pt = document.querySelector(`[data-vault="${id}"] .pt`) as HTMLElement | null
@@ -1453,7 +1460,7 @@ $('vaultadd').addEventListener('click', async () => {
   vault = v
   tasks = await kapi['task:list']()
   ;($('vaultsheet') as HTMLElement).hidden = true
-  setView(DEFAULT_VIEW)
+  render()                             // 同上，切库不换列表
 })
 
 /** 详情栏里的标题就地编辑。回车或失焦保存，esc 还原；不接受清空 */
@@ -1644,13 +1651,6 @@ kapi.onSyncBusy(showSync)
 // 系统外观变了（或别处改了 themeSource）：把开关挪过去。配色 CSS 自己会刷
 kapi.onThemeChanged((next) => { theme = next; setThemeSwitch() })
 kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
-kapi.onShowTask((id) => {                       // 右键菜单里选了"备注"
-  selected = id
-  remember(id)
-  ;(document.querySelector<HTMLInputElement>('[data-titleedit]'))?.blur()
-  editing = !tasks.find(t => t.id === id)?.notes?.trim()
-  render(); focusEditor()
-})
 
 /** 没有库时先讲清楚为什么要选文件夹，再由用户点按钮触发系统对话框 */
 function showWelcome(on: boolean) {
@@ -1687,6 +1687,13 @@ async function boot() {
   applyDetailW()
   // 日历的「显示已完成」开关也得在第一次 render 之前拿到，否则会先按默认关画一遍
   showDone = await kapi['ui:showDone']()
+  /**
+   * 落在上次那一屏列表上（主进程建窗口时已经按同一屏给了尺寸）。浏览器的滚动位置
+   * 没法跨启动保留，列表长了会回到顶部 —— 能记住的只有"哪一屏"。
+   * 没存过、或者存的值这个版本不认识（旧 ui.json 被手改过），就退回默认视图。
+   */
+  const lastView = await kapi['ui:view']()
+  if (lastView && VIEWS.some(v => v.id === lastView)) view = lastView
   // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
   theme = await kapi['ui:theme']()
   // 版本号也要 —— applyStatic 要把它写到左下角那个按钮上
