@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.8.1 — 2026-09-25
+
+- Tasks can be reordered by dragging: in a calendar cell or in a date group in the list, drop the row where you want it and a 2px line shows exactly which task it will land in front of; dragging it onto another day reschedules it and puts it at that spot, the list scrolls by itself when you drag near its edge, and a newly added task goes to the end of its day instead of into the middle of a hand-sorted list.
+- 任务可以拖动排序了：日历格子和列表的日期分组里都能拖，落点画一根 2px 的横线，指到哪条任务前面就插到哪；拖到别的天就是改期并顺手排到那个位置，拖到列表上下边缘会自动滚；新加的任务落在当天末尾，不再插进手排过的顺序中间。
+
 ## 1.8.0 — 2026-09-25
 
 - Added a "completed" switch to the calendar views (7d and 14d, remembered in `ui.json`): turn it on and each cell also lists the tasks finished that day, placed by the day you completed them and with the most recently finished on top; the dark-mode switch moved to the bottom-left corner next to the version number.
