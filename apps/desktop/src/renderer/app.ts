@@ -9,8 +9,8 @@ import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import { DEFAULT_DETAIL_WIDTH, viewSlot, type Api, type FieldOpIpc, type Theme, type VaultState,
-         type ViewId } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, viewSlot, WIN_SLOTS, type Api, type FieldOpIpc, type Theme,
+         type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
 declare global { interface Window { kapi: Api } }
@@ -107,7 +107,14 @@ let showDone = false
  * 不跟 iCloud 同步）—— 下次打开还是这个样子。布局由 .app 上的两个类管（见 index.html）
  */
 let sideCollapsed = false
+/**
+ * 详情栏收起没有。按视图分组各记一份（键同窗口大小：其余视图 / 日历 7d / 日历 14d），
+ * 在日历里收起详情看格子，切回列表再回来它还是收着的。
+ * detailCollapsed 是**当前这一屏**的生效值，切视图时从 detailBySlot 里换一份。
+ * 缓存在这里而不是每次问主进程：切视图要同步画，等一次往返会先闪一帧没收起的界面。
+ */
 let detailCollapsed = false
+const detailBySlot = Object.fromEntries(WIN_SLOTS.map(s => [s, false])) as Record<WinSlot, boolean>
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
@@ -406,7 +413,8 @@ function setDoneSwitch() {
  * 换语言时也要走一遍（applyStatic 会调），否则会留下上一种语言的提示语。
  *
  * 详情栏收起后**选中项不动**：列表里那条照旧高亮，只是详情栏不显示出来。
- * 所以收起状态下点任务只会换选中，不会把详情栏拽回来（点它只选中，见下面 click 那段）
+ * 普通视图里点任务会把详情栏拽回来（见下面 click 那段），日历视图不拽 ——
+ * 日历里点一下往往只是换选中，展开详情会把格子挤小。
  */
 function applyPanes() {
   const app = document.querySelector('.app') as HTMLElement
@@ -418,6 +426,19 @@ function applyPanes() {
   det.title = detailCollapsed ? S.detailExpandTip : S.detailCollapseTip
   det.setAttribute('aria-label', det.title)
   det.setAttribute('aria-expanded', String(!detailCollapsed))
+}
+
+/**
+ * 收起/展开详情栏，状态按**当前视图分组**落进 ui.json（和详情栏宽度一样是本机界面偏好）。
+ * 两个入口共用：详情栏那枚 »/« 按钮，和普通视图里点任务时的自动展开。
+ * 收回时调用方要先把栏里的焦点交出去（见下面 click 那段），这里只管状态。
+ */
+async function setDetailCollapsed(on: boolean) {
+  const slot = viewSlot(view)
+  if (detailBySlot[slot] === on) return
+  detailBySlot[slot] = await kapi['ui:setDetailCollapsed'](slot, on)
+  detailCollapsed = detailBySlot[slot]
+  applyPanes()
 }
 
 /** 换语言不用重启窗口：文案都是 render() 时才取的 */
@@ -612,6 +633,9 @@ function render() {
 function setView(next: ViewId) {
   const from = viewSlot(view), to = viewSlot(next)
   view = next
+  // 详情栏收没收起是**按视图分组**记的：切到日历就把这一屏上次的样子换回来，
+  // 切回普通列表也换回普通列表那份。分组没变（今天 → 最近 7 天之间切）就不动它
+  if (from !== to) { detailCollapsed = detailBySlot[to]; applyPanes() }
   render()
   void kapi['ui:setView'](next)
   if (from !== to) void kapi['window:switch'](to)
@@ -1269,6 +1293,10 @@ document.addEventListener('click', async (e) => {
     remember(id)
     if (target.closest('.title')) { beginTitleEdit(id, e.clientX, e.clientY); return }
     titleEditing = null
+    // 普通视图（最近 7 天 / 30 天这些）里点任务就把详情栏拉回来：收起只是想把列表
+    // 铺满看安排，点一条就是想看它的详情，没道理还要再点一次 » 才展开。
+    // 日历视图不拉 —— 那里点一下常常只是换选中，展开详情会把格子挤小（照旧手动展开）
+    if (detailCollapsed && !CAL[view]) await setDetailCollapsed(false)
     // 还没写过备注就直接进编辑，省一次点击。详情栏收着时不进 ——
     // 那个 textarea 在 display:none 的栏里 focus 不上，硬设 editing 只会让它
     // 挂在"编辑中"这个状态上，下次展开详情栏无缘无故就弹出编辑器
@@ -1654,7 +1682,8 @@ document.addEventListener('click', async (e) => {
 
 /**
  * 收起/展开两侧栏。状态存 ui.json —— 和详情栏宽度一样是本机的界面偏好。
- * 详情栏收起后选中项不动：列表里那条照旧高亮，点它只是换选中，不会把详情栏拽回来。
+ * 详情栏收起后选中项不动（列表里那条照旧高亮）；普通视图里点任务会自动展开它，
+ * 日历视图和以前一样只换选中，得手动点 » 才展开。
  */
 document.addEventListener('click', async (e) => {
   const t = e.target as HTMLElement
@@ -1668,7 +1697,7 @@ document.addEventListener('click', async (e) => {
     // 打了一半的字不会因为面板被藏起来而丢（和主进程的同步挡板同一套做法）
     const active = document.activeElement as HTMLElement | null
     if (!detailCollapsed && active?.closest?.('#detail')) active.blur()
-    detailCollapsed = await kapi['ui:setDetailCollapsed'](!detailCollapsed)
+    await setDetailCollapsed(!detailCollapsed)
   }
   applyPanes()
 })
@@ -1759,7 +1788,6 @@ async function boot() {
   // 两侧栏收起没有，也要在第一次 render 之前拿到，否则会先按"三栏都在"画一遍再塌下去。
   // 而且得赶在 setLang 之前 —— applyStatic 里会调 applyPanes 把它们落到 .app 上
   sideCollapsed = await kapi['ui:sidebarCollapsed']()
-  detailCollapsed = await kapi['ui:detailCollapsed']()
   // 日历的「显示已完成」开关也得在第一次 render 之前拿到，否则会先按默认关画一遍
   showDone = await kapi['ui:showDone']()
   /**
@@ -1769,6 +1797,12 @@ async function boot() {
    */
   const lastView = await kapi['ui:view']()
   if (lastView && VIEWS.some(v => v.id === lastView)) view = lastView
+  /**
+   * 详情栏收没收起按视图分组记，所以三份都先拿回来（切视图时不再问主进程，见 setView），
+   * 再把当前这一屏那份装上。必须在 setLang 之前 —— applyStatic 会调 applyPanes。
+   */
+  for (const slot of WIN_SLOTS) detailBySlot[slot] = await kapi['ui:detailCollapsed'](slot)
+  detailCollapsed = detailBySlot[viewSlot(view)]
   // 主题要在 setLang 之前拿到：applyStatic 里会刷开关状态，那时 theme 得是对的
   theme = await kapi['ui:theme']()
   // 版本号也要 —— applyStatic 要把它写到左下角那个按钮上

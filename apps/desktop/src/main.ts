@@ -50,6 +50,11 @@ type UiState = {
   showDone?: boolean
   /** 左右两侧栏收起没有。没存过 = 都不收（完整三栏） */
   sidebarCollapsed?: boolean
+  /**
+   * 详情栏收起没有，按视图分组记（键同 winSize 的 WinSlot）。1.9.x 只存过一个全局
+   * 布尔 detailCollapsed，读不到分组值时拿它兜底 —— 见下面的 ui:detailCollapsed
+   */
+  detailCollapsedBySlot?: Partial<Record<WinSlot, boolean>>
   detailCollapsed?: boolean
   /** 上次停在哪个列表，打开就回到那一屏。已完成 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
   view?: ViewId
@@ -435,10 +440,21 @@ handle('ui:setSidebarCollapsed', (on: boolean) => {
   writeUi({ ...readUi(), sidebarCollapsed: on })
   return on
 })
-handle('ui:detailCollapsed', () => readUi().detailCollapsed === true)
-handle('ui:setDetailCollapsed', (on: boolean) => {
+/**
+ * 详情栏收起没有。按视图分组各记一份（其余视图 / 日历 7d / 日历 14d，和 winSize 同粒度）——
+ * 在日历里把详情栏收起来铺满格子，切回别的列表逛一圈再回来，它还是收着的。
+ * 1.9.x 只存过一个全局布尔，读不到分组值时拿它兜底，老用户的习惯不会凭空变。
+ */
+handle('ui:detailCollapsed', (slot: WinSlot) => {
+  if (!isWinSlot(slot)) throw new Error(`不认识的视图分组：${String(slot)}`)
+  const ui = readUi()
+  return ui.detailCollapsedBySlot?.[slot] ?? ui.detailCollapsed === true
+})
+handle('ui:setDetailCollapsed', (slot: WinSlot, on: boolean) => {
+  if (!isWinSlot(slot)) throw new Error(`不认识的视图分组：${String(slot)}`)
   if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
-  writeUi({ ...readUi(), detailCollapsed: on })
+  const ui = readUi()
+  writeUi({ ...ui, detailCollapsedBySlot: { ...ui.detailCollapsedBySlot, [slot]: on } })
   return on
 })
 

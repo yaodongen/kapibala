@@ -146,8 +146,13 @@ export type Commands = {
    */
   'ui:sidebarCollapsed': () => boolean
   'ui:setSidebarCollapsed': (on: boolean) => boolean
-  'ui:detailCollapsed': () => boolean
-  'ui:setDetailCollapsed': (on: boolean) => boolean
+  /**
+   * 详情栏收起没有。按视图分组各记一份（其余视图 / 日历 7d / 日历 14d，和窗口大小
+   * 同粒度）：在日历里收起详情把格子铺满，切回别的列表逛一圈再回来，它还是收着的
+   */
+  'ui:detailCollapsed': (slot: WinSlot) => boolean
+  /** 记下某个视图分组的详情栏收起状态。返回存进去的值 */
+  'ui:setDetailCollapsed': (slot: WinSlot, on: boolean) => boolean
   /**
    * 上次停在哪个列表，打开就回到那一屏（没存过 = 渲染进程的 DEFAULT_VIEW）。
    * 已完成 / 垃圾桶不记，所以返回的一定是 RESTORABLE_VIEWS 里的一个
