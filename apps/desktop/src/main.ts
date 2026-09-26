@@ -32,6 +32,9 @@ type UiState = {
   detailWidth?: number
   /** 日历视图是否显示"当天已完成"的任务。没存过 = 关 */
   showDone?: boolean
+  /** 左右两侧栏收起没有。没存过 = 都不收（完整三栏） */
+  sidebarCollapsed?: boolean
+  detailCollapsed?: boolean
   /** 上次停在哪个列表，打开就回到那一屏。已完成 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
   view?: ViewId
   /** 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot */
@@ -391,6 +394,21 @@ handle('ui:showDone', () => readUi().showDone === true)
 handle('ui:setShowDone', (on: boolean) => {
   if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
   writeUi({ ...readUi(), showDone: on })
+  return on
+})
+
+// 两侧栏收起没有。和上面的 showDone 一样是布尔本机偏好，形状照抄，只是键不同。
+// 收起状态不影响库里的任何东西，纯界面：下次打开还是这个样子
+handle('ui:sidebarCollapsed', () => readUi().sidebarCollapsed === true)
+handle('ui:setSidebarCollapsed', (on: boolean) => {
+  if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
+  writeUi({ ...readUi(), sidebarCollapsed: on })
+  return on
+})
+handle('ui:detailCollapsed', () => readUi().detailCollapsed === true)
+handle('ui:setDetailCollapsed', (on: boolean) => {
+  if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
+  writeUi({ ...readUi(), detailCollapsed: on })
   return on
 })
 

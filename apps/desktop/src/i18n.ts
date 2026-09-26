@@ -42,6 +42,14 @@ const ZH = {
    */
   showDoneOn: '显示当天已完成的任务',
   showDoneOff: '不显示已完成的任务',
+  /**
+   * 收起/展开两侧栏的按钮提示。和主题开关一样写"点了会变成什么"：
+   * 侧边栏那枚长在侧边栏里（收起后整块都不在了），展开那枚长在主区标题行最前面
+   */
+  sidebarCollapseTip: '收起侧边栏，只看任务',
+  sidebarExpandTip: '展开侧边栏',
+  detailCollapseTip: '收起详情栏，只看任务',
+  detailExpandTip: '展开详情栏，写备注',
 
   // ── 视图 ──
   today: '今天',
@@ -180,6 +188,10 @@ const EN: typeof ZH = {
   themeToLight: 'Switch to light mode',
   showDoneOn: 'Show tasks completed that day',
   showDoneOff: 'Hide completed tasks',
+  sidebarCollapseTip: 'Hide the sidebar and focus on the tasks',
+  sidebarExpandTip: 'Show the sidebar',
+  detailCollapseTip: 'Hide the detail pane and focus on the tasks',
+  detailExpandTip: 'Show the detail pane to write notes',
 
   today: 'Today',
   todaySub: (label, wd) => `${label}, ${wd}`,

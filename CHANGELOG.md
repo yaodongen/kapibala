@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.9.1 — 2026-09-26
+
+- Both side panes can be collapsed to give the task list or the calendar the whole window: the `«` button at the right of the sidebar header hides the sidebar (a `☰` button at the front of the main header brings it back), and the `»` button at the right of that header hides the detail pane. Both states are remembered in `ui.json`, and while the detail pane is hidden clicking a task only selects it instead of pulling the pane back.
+- 左右两侧栏都能收起了，专心看任务列表或日历时可以把窗口全让出来：侧边栏品牌行右端的 `«` 收起侧边栏（收起后主区标题行最前面出现 `☰`，点它展开），标题行右端的 `»` 收起详情栏。两个状态都记进 `ui.json`，详情栏收着时点任务只换选中，不会把详情栏拽回来。
+
 ## 1.9.0 — 2026-09-25
 
 - The app reopens on the list you left it on — Today, Next 7 days, Next 30 days, Calendar 7d, Calendar 14d or All, remembered in `ui.json`, with the window size for that view; Completed and Trash are never remembered, and switching vaults keeps you on the same list. A task can be marked important from the right-click menu, which gives its row a red bar and a faint red tint in both the list and the calendar, and the next occurrence of a recurring task inherits the mark. The right-click menu drops Notes and Complete (notes live in the detail pane, completing is the circle at the start of the row) and the Doing item now reads Mark Doing / Unmark Doing.

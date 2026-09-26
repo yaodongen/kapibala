@@ -92,6 +92,13 @@ let view: ViewId = DEFAULT_VIEW
  * 状态存在 ui.json 里，和语言、主题一样是本机偏好，两个日历视图共用这一个开关。
  */
 let showDone = false
+/**
+ * 左右两侧栏收起没有。收起是为了把任务列表 / 日历铺满，专心看安排。
+ * 和详情栏宽度、语言、主题一样是本机的界面偏好，存在 ui.json 里（不进库目录、
+ * 不跟 iCloud 同步）—— 下次打开还是这个样子。布局由 .app 上的两个类管（见 index.html）
+ */
+let sideCollapsed = false
+let detailCollapsed = false
 /** 右侧详情栏选中的任务；备注是否处于编辑态 */
 let selected: string | null = null
 let editing = false
@@ -339,12 +346,20 @@ function applyStatic() {
   const sep = $('dresize')
   sep.title = S.detailResizeTip
   sep.setAttribute('aria-label', S.detailResizeTip)
+  // 侧边栏那两枚"收起/展开"按钮的提示。它们的含义不随状态变（收起就是收起），
+  // 而 #detailtoggle 一个按钮担两职、箭头和提示都随状态变，交给 applyPanes 管
+  for (const [id, tip] of [['sidecollapse', S.sidebarCollapseTip],
+                           ['sideexpand', S.sidebarExpandTip]] as Array<[string, string]>) {
+    $(id).title = tip
+    $(id).setAttribute('aria-label', tip)
+  }
   // 空备注的占位文字在 CSS 的 ::before 里，只能靠变量递进去
   document.documentElement.style.setProperty('--md-empty', JSON.stringify(S.notesEmpty))
   // 已完成列表最左边那一列的宽度：英文写 "11:58 PM"，比中文的 "23:58" 宽不少
   document.documentElement.style.setProperty('--doneat-w', lang === 'en' ? '56px' : '44px')
   setThemeSwitch()
   setDoneSwitch()
+  applyPanes()
 }
 
 /**
@@ -372,6 +387,28 @@ function setDoneSwitch() {
   el.setAttribute('aria-checked', String(showDone))
   el.title = tip
   el.setAttribute('aria-label', tip)
+}
+
+/**
+ * 两侧栏的收起状态落到界面上。布局和显隐全在 .app 的两个类上（见 index.html），
+ * 这里只刷那几个按钮自己的样子：
+ *   #sideexpand  —— 只在侧边栏收起时出现。它是唯一的展开入口，那枚«跟着侧边栏一起没了
+ *   #detailtoggle —— 箭头反过来、提示改写成"点了会变成什么"（和主题开关一个规矩）
+ * 换语言时也要走一遍（applyStatic 会调），否则会留下上一种语言的提示语。
+ *
+ * 详情栏收起后**选中项不动**：列表里那条照旧高亮，只是详情栏不显示出来。
+ * 所以收起状态下点任务只会换选中，不会把详情栏拽回来（点它只选中，见下面 click 那段）
+ */
+function applyPanes() {
+  const app = document.querySelector('.app') as HTMLElement
+  app.classList.toggle('side-collapsed', sideCollapsed)
+  app.classList.toggle('detail-collapsed', detailCollapsed)
+  $('sideexpand').hidden = !sideCollapsed
+  const det = $('detailtoggle')
+  det.textContent = detailCollapsed ? '«' : '»'
+  det.title = detailCollapsed ? S.detailExpandTip : S.detailCollapseTip
+  det.setAttribute('aria-label', det.title)
+  det.setAttribute('aria-expanded', String(!detailCollapsed))
 }
 
 /** 换语言不用重启窗口：文案都是 render() 时才取的 */
@@ -715,7 +752,9 @@ const DETAIL_MIN_W = 260
 let detailW = DEFAULT_DETAIL_WIDTH
 /** 列表区至少留这么宽。窗口再窄也不能让详情栏把任务列表压没 */
 const MAIN_MIN_W = 320
-/** 侧边栏宽度，和 index.html 里 .app 的第一列（216px）对齐 —— 改一边要改两边 */
+/** 侧边栏宽度，和 index.html 里 .app 第一列的兜底值（216px）对齐 —— 改一边要改两边。
+ *  侧边栏收起时那一列是 0，这里仍旧按 216 算：夹详情栏宽度时保守一点没坏处，
+ *  收起后多出来的地方留给任务列表 */
 const SIDEBAR_W = 216
 /** 夹一次：最小 260；最大不超过窗口的 60%，同时给列表区留够 320 */
 function clampDetailW(w: number): number {
@@ -1221,8 +1260,10 @@ document.addEventListener('click', async (e) => {
     remember(id)
     if (target.closest('.title')) { beginTitleEdit(id, e.clientX, e.clientY); return }
     titleEditing = null
-    // 还没写过备注就直接进编辑，省一次点击
-    editing = !tasks.find(t => t.id === id)?.notes?.trim()
+    // 还没写过备注就直接进编辑，省一次点击。详情栏收着时不进 ——
+    // 那个 textarea 在 display:none 的栏里 focus 不上，硬设 editing 只会让它
+    // 挂在"编辑中"这个状态上，下次展开详情栏无缘无故就弹出编辑器
+    editing = !detailCollapsed && !tasks.find(t => t.id === id)?.notes?.trim()
     render(); focusEditor(); return
   }
   const btn = target.closest<HTMLElement>('[data-act]')
@@ -1602,6 +1643,27 @@ document.addEventListener('click', async (e) => {
   render()
 })
 
+/**
+ * 收起/展开两侧栏。状态存 ui.json —— 和详情栏宽度一样是本机的界面偏好。
+ * 详情栏收起后选中项不动：列表里那条照旧高亮，点它只是换选中，不会把详情栏拽回来。
+ */
+document.addEventListener('click', async (e) => {
+  const t = e.target as HTMLElement
+  const side = !!t.closest('#sidecollapse') || !!t.closest('#sideexpand')
+  if (!side && !t.closest('#detailtoggle')) return
+  if (side) {
+    sideCollapsed = await kapi['ui:setSidebarCollapsed'](!sideCollapsed)
+  } else {
+    // 收起详情栏之前先把焦点交出去：备注/标题都在那一栏里，display:none 之后
+    // 还能不能收到 focusout 不该赌 —— 主动 blur 一次，走它们自己的保存路径，
+    // 打了一半的字不会因为面板被藏起来而丢（和主进程的同步挡板同一套做法）
+    const active = document.activeElement as HTMLElement | null
+    if (!detailCollapsed && active?.closest?.('#detail')) active.blur()
+    detailCollapsed = await kapi['ui:setDetailCollapsed'](!detailCollapsed)
+  }
+  applyPanes()
+})
+
 // 渲染进程自己的报错也要进同一份日志，否则用户看到的日志里没有真正的原因
 window.addEventListener('error', (e) => {
   void kapi['log:renderer'](`${e.message} @ ${e.filename}:${e.lineno}`)
@@ -1685,6 +1747,10 @@ async function boot() {
   // 先把上次拖的详情栏宽度装上，省得第一帧按默认 340 画一遍再跳
   detailW = await kapi['ui:detailWidth']()
   applyDetailW()
+  // 两侧栏收起没有，也要在第一次 render 之前拿到，否则会先按"三栏都在"画一遍再塌下去。
+  // 而且得赶在 setLang 之前 —— applyStatic 里会调 applyPanes 把它们落到 .app 上
+  sideCollapsed = await kapi['ui:sidebarCollapsed']()
+  detailCollapsed = await kapi['ui:detailCollapsed']()
   // 日历的「显示已完成」开关也得在第一次 render 之前拿到，否则会先按默认关画一遍
   showDone = await kapi['ui:showDone']()
   /**

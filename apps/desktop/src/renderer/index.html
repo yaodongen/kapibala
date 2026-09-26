@@ -38,9 +38,41 @@ body{
   color:var(--text); background:var(--bg); height:100vh; overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
-/* 三栏：侧边栏 / 列表 / 详情栏。详情栏宽度由 --detail-w 决定（app.ts 拖动时改它，
-   初始值从 ui.json 读；这里给 340 只是页面画出来到 boot() 之间那一小会儿的兜底） */
-.app{position:relative; display:grid; grid-template-columns:216px 1fr var(--detail-w,340px); height:100vh}
+/* 三栏：侧边栏 / 列表 / 详情栏。左右两栏的宽度都由变量给（app.ts 拖动时改 --detail-w，
+   初始值从 ui.json 读；这里给 216 / 340 只是页面画出来到 boot() 之间那一小会儿的兜底）。
+   收起时把对应的变量置 0，并把那一栏整个 display:none —— 光靠 0 宽不够：
+   .detailpane 的 border-left 会留一道 1px 的线，里面的内边距也会往外溢出来 */
+.app{position:relative; display:grid;
+     grid-template-columns:var(--side-w,216px) 1fr var(--detail-w,340px); height:100vh}
+/* 三栏各自占哪一列写死。收起的那一栏是 display:none，不写死的话网格会自动放置 ——
+   后面的栏按 DOM 顺序往前顶，列表就跑进 0 宽的那一列里去了 */
+.sidebar{ grid-column:1 }
+.main{ grid-column:2 }
+.detailpane{ grid-column:3 }
+.app.side-collapsed{ --side-w:0px }
+.app.detail-collapsed{ --detail-w:0px }
+.app.side-collapsed .sidebar,
+.app.detail-collapsed .detailpane,
+.app.detail-collapsed .dresize{ display:none }
+
+/* 收起/展开两侧栏的小按钮。箭头指向"要把它推到哪边"：侧边栏在左（« 收起、☰ 展开），
+   详情栏在右（» 收起、« 展开）。两枚都不往窗口边缘浮 —— 左上角是红绿灯，
+   顶上 34px 又是固定压着的可拖动区（.titlebar），所以 z-index 要高过它(50)，
+   否则标题那一行压着的那一截点不到 */
+.panebtn{ flex:none; position:relative; z-index:60; width:39px; height:39px; padding:0;
+          border:none; border-radius:10px; background:none; color:var(--dim);
+          font:inherit; font-size:21px; line-height:1; cursor:default }
+.panebtn:hover{ background:var(--row-hover); color:var(--text) }
+/* 侧边栏那枚贴在品牌行右端（margin-left:auto 顶过去）。比主区那两枚小一档
+   （0.85 倍）：品牌行只有 19px 的图标和一行字，一样大就太压了 */
+.brand .panebtn{ margin-left:auto; width:33px; height:33px; font-size:18px; border-radius:9px }
+/* 主区标题行右侧那几个控件（清空垃圾桶、显示已完成、收起详情栏）高矮差得远
+   （28 / 20 / 39px），各顶各的就会看着七上八下。统一按这一行的竖直中线对齐 ——
+   也就是"标题 + 副标题"这一整块的中线，比只跟标题第一行对齐更稳。
+   顺带解决另一件事：侧边栏收起后，☰ 是主区里唯一贴着窗口左边缘的东西，
+   39px 比一行标题还高，对齐标题第一行就会顶进左上角那三个红绿灯里
+   （点上去是把窗口关掉/最小化）。居中的位置正好落在红绿灯下面 */
+.vhead > .ghost, .vhead > .donesw, .vhead > .panebtn{ align-self:center }
 
 /* ── 侧边栏 ── */
 .sidebar{
@@ -385,8 +417,9 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .donesw .knob::after{ content:'✓'; font-size:11px; line-height:1; color:var(--dim) }
 .donesw[aria-checked="true"] .knob::after{ color:var(--on-accent) }
 /* 顶栏有一条固定的可拖动区域（.titlebar）压在主区上面，剩在顶栏的开关得浮到它上方才点得到。
+   竖直位置交给上面那条 align-self:center，这里只管浮起来。
    夜间模式开关已经挪到左下角的 .sidefoot，那儿没有遮挡，不用这套 */
-.vhead .donesw{ margin-top:6px; z-index:60 }
+.vhead .donesw{ z-index:60 }
 /* 库列表 */
 .vlist{ margin:0; padding:6px; overflow:auto; flex:1; display:flex; flex-direction:column; gap:2px }
 .vrow{ display:flex; align-items:flex-start; gap:9px; padding:8px 10px; border-radius:8px;
@@ -517,6 +550,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
         </g>
       </svg>
       <span id="brandname"></span>
+      <!-- 收起侧边栏。收起后侧边栏整块都不在了，展开那枚长在主区标题行最前面（#sideexpand） -->
+      <button class="panebtn" id="sidecollapse">«</button>
     </div>
     <button class="vault" id="vault"></button>
     <input type="search" id="search" autocomplete="off">
@@ -534,6 +569,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
   <main class="main">
     <header>
       <div class="vhead">
+        <!-- 只在侧边栏收起时出现：展开的唯一入口（那枚«跟着侧边栏一起没了） -->
+        <button class="panebtn" id="sideexpand" hidden>☰</button>
         <div class="vheadtext">
           <h1 id="vtitle"></h1>
           <div class="sub" id="vsub"></div>
@@ -544,6 +581,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
         <button class="donesw" id="donesw" data-donesw role="switch" aria-checked="false" hidden>
           <span class="knob"></span>
         </button>
+        <!-- 收起详情栏。文字和提示由 app.ts 的 applyPanes 管（收起时箭头反过来） -->
+        <button class="panebtn" id="detailtoggle">»</button>
       </div>
     </header>
     <div id="banner"></div>

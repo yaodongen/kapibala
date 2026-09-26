@@ -121,6 +121,14 @@ export type Commands = {
   /** 记下这个开关。返回存进去的值 */
   'ui:setShowDone': (on: boolean) => boolean
   /**
+   * 左右两侧栏收起没有。收起是为了把任务列表 / 日历铺满（专注看安排），
+   * 默认都不收。和详情栏宽度一样是本机的界面偏好：不进库目录、不跟 iCloud 同步
+   */
+  'ui:sidebarCollapsed': () => boolean
+  'ui:setSidebarCollapsed': (on: boolean) => boolean
+  'ui:detailCollapsed': () => boolean
+  'ui:setDetailCollapsed': (on: boolean) => boolean
+  /**
    * 上次停在哪个列表，打开就回到那一屏（没存过 = 渲染进程的 DEFAULT_VIEW）。
    * 已完成 / 垃圾桶不记，所以返回的一定是 RESTORABLE_VIEWS 里的一个
    */
@@ -154,7 +162,9 @@ export const CHANNELS = [
   'vault:state', 'vault:pick', 'vault:list', 'vault:open', 'vault:forget', 'task:list', 'task:create', 'task:setField',
   'task:setMany', 'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
-  'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone', 'ui:view', 'ui:setView',
+  'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone',
+  'ui:sidebarCollapsed', 'ui:setSidebarCollapsed', 'ui:detailCollapsed', 'ui:setDetailCollapsed',
+  'ui:view', 'ui:setView',
   'window:switch', 'app:version',
   'log:read', 'log:copy', 'log:reveal', 'log:renderer',
 ] as const satisfies ReadonlyArray<keyof Commands>
