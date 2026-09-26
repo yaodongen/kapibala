@@ -120,6 +120,10 @@ make install-app
 
 On a fresh clone, run `make install` once first. `make help` lists everything else — launching a dev build, tests, dmg, the CLI.
 
+**Windows**: `make win` produces `apps/desktop/release/Kapibala-*-setup.exe` (cross-building from a Mac works too). On Windows itself, run `corepack enable` once and then `pnpm --filter kapibala-desktop win`.
+
+Two things differ from macOS on Windows, both decided by the OS: closing the window **hides it to the tray** (right-click the tray icon and pick Quit to really exit — otherwise a closed window can be neither reached nor dismissed); and app data lives in `%APPDATA%\Kapibala`, never inside the vault folder, same as on the Mac. Syncing is unchanged — OneDrive, Dropbox, Nutstore all work; there is just no iCloud "placeholder not downloaded yet" state to handle.
+
 Design notes live in [`docs/`](./docs): [`architecture.md`](./docs/architecture.md) for how the pieces fit together, [`storage.md`](./docs/storage.md) for the on-disk format.
 
 ## 8. License

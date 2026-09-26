@@ -1,11 +1,11 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell, Tray } from 'electron'
 import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, viewSlot, type FieldOpIpc,
-         type TaskDraftIpc, type Theme, type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, platformOf, viewSlot, PLATFORM_ARG,
+         type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -14,9 +14,25 @@ process.on('unhandledRejection', e => log('error', '未处理的 Promise 拒绝'
 
 setNoteLogger((m, x) => log('info', m, x))
 const env = nodeEnv()
+/**
+ * 运行平台。整个应用只在这里判定一次，渲染进程那份也是从这里递过去的
+ * （见 createWindow 的 additionalArguments）—— 新功能要分平台，用这个 `isMac`，
+ * 别再去读 process.platform，两边各判一次迟早会对不上。
+ *
+ * KAPIBALA_OS 只在未打包时认，作用是在 Mac 上把 Windows 那条分支整条跑一遍
+ * （托盘、标题栏、单实例锁、关窗口收进托盘，连 CSS 一起）—— 不然那半边只能靠读。
+ * 和 KAPIBALA_USER_DATA / KAPIBALA_LANG 是一路货，打包后一律忽略：
+ * 成品不该被一个环境变量骗到别的平台上去。
+ */
+const PLATFORM = platformOf(process.platform, app.isPackaged ? undefined : process.env['KAPIBALA_OS'])
+const isMac = PLATFORM === 'darwin'
 let store: Store | null = null
 let win: BrowserWindow | null = null
 let watcher: FSWatcher | null = null
+/** macOS 之外的平台用托盘兜底，见 refreshAppMenus() */
+let tray: Tray | null = null
+/** 托盘提示只弹一次，别每次收窗口都烦用户 */
+let trayHinted = false
 /** 关窗口只是收起来，真退出得走 Dock 图标右键的"退出"或 ⌘Q。这个标记区分两者 */
 let quitting = false
 
@@ -136,6 +152,18 @@ const effectiveTheme = (): Theme => nativeTheme.shouldUseDarkColors ? 'dark' : '
 /** 窗口还没画出页面时的底色，跟 index.html 里的 --bg 对上，免得启动闪一下 */
 const windowBg = () => effectiveTheme() === 'dark' ? '#1e1e20' : '#f7eee0'
 
+/**
+ * Windows 右上角那三个窗口按钮（最小化/最大化/关闭）是系统画的 Window Controls Overlay，
+ * 它连**整条 34px 的标题带**一起上色，所以颜色要取主区底色 —— 三栏里它占的面积最大，
+ * 侧边栏那 216px 差一档（#f5f5f7 vs #fff）几乎看不出来。高度和 index.html 里那条
+ * 可拖动区对齐，页面正是按 34px 留的白。
+ */
+const overlayOpts = (): Electron.TitleBarOverlay => ({
+  color: windowBg(),
+  symbolColor: effectiveTheme() === 'dark' ? '#f2f2f4' : '#1d1d1f',
+  height: 34,
+})
+
 function applyTheme() {
   nativeTheme.themeSource = themePref()
 }
@@ -167,6 +195,8 @@ function syncBusy(busy: boolean) {
  */
 nativeTheme.on('updated', () => {
   win?.setBackgroundColor(windowBg())
+  // Windows 的标题带是系统画的，颜色得我们自己跟着主题改一次
+  if (!isMac && win && !win.isDestroyed()) win.setTitleBarOverlay(overlayOpts())
   if (win && !win.isDestroyed()) win.webContents.send('theme:changed', effectiveTheme())
 })
 
@@ -365,7 +395,7 @@ handle('ui:lang', () => lang())
 handle('ui:setLang', (next: Lang) => {
   if (!isLang(next)) throw new Error(`不认识的语言：${String(next)}`)
   writeUi({ ...readUi(), lang: next })
-  refreshDockMenu()                       // Dock 菜单是启动时建好的，语言变了要重建
+  refreshAppMenus()                       // Dock 菜单 / 托盘菜单是启动时建好的，语言变了要重建
   log('info', '切换界面语言', { lang: next })
   return next
 })
@@ -503,18 +533,30 @@ function createWindow() {
   winSlot = isRestorableView(start) ? viewSlot(start) : 'other'
   const saved = readUi().winSize?.[winSlot]
   const [w, h] = saved ? fitToScreen(saved[0], saved[1]) : [DEFAULT_W, DEFAULT_H]
-  win = new BrowserWindow({
+  const opts: Electron.BrowserWindowConstructorOptions = {
     width: w, height: h, minWidth: MIN_W, minHeight: MIN_H,
-    titleBarStyle: 'hiddenInset',
     // 跟着主题走：页面还没画出来时露的就是它，深色下不能是奶油色
     backgroundColor: windowBg(),
     webPreferences: {
       preload: join(__dirname, 'preload.cjs'),
+      // 平台由主进程判定，这里把结果递给 preload（渲染进程不自己读 process.platform）
+      additionalArguments: [`${PLATFORM_ARG}${PLATFORM}`],
       contextIsolation: true,      // 渲染进程零 fs 权限，见 architecture.zh.md §5
       nodeIntegration: false,
       sandbox: true,
     },
-  })
+  }
+  if (isMac) {
+    // 藏掉系统标题栏，红绿灯浮在页面左上角。页面自己留出左边和顶上那 34px
+    opts.titleBarStyle = 'hiddenInset'
+  } else {
+    // Windows 同样藏掉标题栏，但三个窗口按钮交给系统的 Window Controls Overlay 画在右上角。
+    // 自己画一套要处理最大化/还原状态、双击标题栏、贴边吸附、系统菜单，不值当。
+    // 页面那边只要在详情栏收起时给右边让出按钮的宽度（见 index.html 的 html[data-os=win]）
+    opts.titleBarStyle = 'hidden'
+    opts.titleBarOverlay = overlayOpts()
+  }
+  win = new BrowserWindow(opts)
   // 用户手动拖出来的大小，记在当前这一屏名下。防抖：拖的过程中一直在变，
   // ui.json 是整份重写，没必要每一帧都落盘
   win.on('resize', () => {
@@ -526,13 +568,20 @@ function createWindow() {
   // 而且没有后退的路。一律拦下，交给系统浏览器
   win.webContents.on('will-navigate', (e, url) => { e.preventDefault(); openExternal(url) })
   win.loadFile(join(__dirname, 'renderer/index.html'))
-  // 点红灯只是把窗口收起来，进程继续跑 —— 下次点 Dock 图标立刻回来，不用重新读库。
-  // 真退出的两条路（Dock 右键"退出"、⌘Q）都会先发 before-quit，把 quitting 立起来
+  // 点关闭只是把窗口收起来，进程继续跑 —— 下次点 Dock / 托盘图标立刻回来，不用重新读库。
+  // 真退出的路（macOS：Dock 右键"退出"或 ⌘Q；Windows：托盘的"退出"）都会先发
+  // before-quit，把 quitting 立起来
   win.on('close', (e) => {
     if (quitting) return
     e.preventDefault()
     win?.hide()
     log('info', '主窗口收起，应用继续在后台运行')
+    // Windows 上任务栏图标跟着窗口一起消失，用户可能以为应用关了。
+    // 第一次收起时提示一下托盘在哪 —— 只提示一次，之后就别烦人了
+    if (!isMac && !trayHinted) {
+      trayHinted = true
+      try { tray?.displayBalloon({ title: S().brand, content: S().trayHint }) } catch { /* 系统不让弹就算了 */ }
+    }
   })
   return win
 }
@@ -544,17 +593,49 @@ function showWindow() {
 }
 
 /**
- * Dock 图标右键的菜单。macOS 会在我们这几项下面自动接上"选项 / 显示全部窗口 / 退出"，
+ * macOS：Dock 图标右键的菜单。系统会在我们这几项下面自动接上"选项 / 显示全部窗口 / 退出"，
  * 所以这里不重复放"退出" —— 系统那一项走的是标准退出流程。
+ *
+ * Windows 没有 Dock，用托盘顶上：窗口收起来之后，这里是唯一的入口和唯一的退出口
+ * （任务栏图标跟着窗口一起没了，没有托盘就等于既回不来也退不掉）。
  */
-function refreshDockMenu() {
-  app.dock?.setMenu(Menu.buildFromTemplate([
-    { label: S().dockOpen, click: () => showWindow() },
+function refreshAppMenus() {
+  if (isMac) {
+    app.dock?.setMenu(Menu.buildFromTemplate([
+      { label: S().dockOpen, click: () => showWindow() },
+    ]))
+    return
+  }
+  const s = S()
+  if (!tray) {
+    tray = new Tray(join(__dirname, 'assets/tray.png'))
+    // 左键点一下就把窗口叫回来；右键弹的是下面这份菜单
+    tray.on('click', () => showWindow())
+  }
+  tray.setToolTip(s.brand)
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: s.dockOpen, click: () => showWindow() },
+    { type: 'separator' },
+    { label: s.trayQuit, click: () => app.quit() },
   ]))
 }
 
+/**
+ * 单实例锁。Windows 上双击两次图标会真的起两个进程：两只托盘、两份窗口，
+ * 还要抢同一个锁文件。macOS 由 Finder 自己挡住，不用管。
+ * 没抢到锁的进程立刻退出，剩下的活儿交给已经在跑的那个。
+ */
+const primary = isMac || app.requestSingleInstanceLock()
+
+if (!primary) app.quit()
+else app.on('second-instance', () => showWindow())
+
 app.whenReady().then(async () => {
+  if (!primary) return
   applyTheme()          // 必须早于建窗口：晚了第一帧会先按系统默认色画一遍，再闪一下
+  // Windows 上不留菜单条：Electron 默认那份 File/Edit/View/Window/Help 会压在页面顶上，
+  // 而顶上 34px 是我们自己的标题区。开发时不删，留着"Toggle DevTools"那几个好用
+  if (!isMac && app.isPackaged) Menu.setApplicationMenu(null)
   await boot()
   const w = createWindow()
   w.webContents.once('did-finish-load', async () => {
@@ -564,7 +645,7 @@ app.whenReady().then(async () => {
     // 开发期自检钩子。打包后一律失效，不留在成品里
     if (!app.isPackaged) await selfTest(w)
   })
-  refreshDockMenu()
+  refreshAppMenus()
   // 点 Dock 图标：收起来的窗口要能回来，不是只在"一个窗口都没有"时才建
   app.on('activate', () => showWindow())
 })

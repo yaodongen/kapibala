@@ -10,6 +10,9 @@ const { execFileSync } = require('node:child_process')
  * 交给 electron-builder 正常签名与公证。
  */
 module.exports = async (context) => {
+  // 只对 macOS 有意义。Windows 上没有 codesign，也没有需要重新封装的 .app ——
+  // 不挡这一下的话，打 Windows 包时会直接 execFileSync 失败
+  if (context.electronPlatformName !== 'darwin') return
   if (process.env.CSC_LINK || process.env.CSC_NAME) return
   const app = `${context.appOutDir}/${context.packager.appInfo.productFilename}.app`
   // 必须带上 --options runtime 和 entitlements：不带的话这次重签会把 electron-builder

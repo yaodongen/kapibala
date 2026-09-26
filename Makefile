@@ -16,7 +16,7 @@ VERSION := $(shell node -p "require('./package.json').version")
 ICLOUD  := $(HOME)/Library/Mobile Documents/com~apple~CloudDocs
 
 .DEFAULT_GOAL := help
-.PHONY: help desktop app dmg install-app tag run check test e2e deploy doctor install unlink \
+.PHONY: help desktop app dmg win install-app tag run check test e2e deploy doctor install unlink \
         watch icons preview preview-shot clean distclean typecheck link desktop-build
 
 help:
@@ -34,6 +34,7 @@ help:
 	@echo "    make app         打出 Kapibala.app（本机直接双击就能跑）"
 	@echo "    make install-app 打包并装进 /Applications"
 	@echo "    make dmg         打出可以发给别人的 dmg"
+	@echo "    make win         打出 Windows 的 setup.exe（在 Mac 上交叉打包也行）"
 	@echo "    make tag         打 v$(VERSION) 标签并推送，触发 release 构建"
 	@echo ""
 	@echo "  安装"
@@ -109,6 +110,11 @@ dmg:
 	@bash scripts/pack.sh --mac dmg --arm64
 	@ls apps/desktop/release/*.dmg
 
+# Windows 的安装包。走同一个 pack.sh（它会给 electron-builder 补上 pnpm 的 shim），
+# 在 Mac 上交叉打包同样可行 —— 只是没法在本机点开验，得拷到 Windows 上试
+win:
+	@bash scripts/pack.sh --win --x64
+	@ls apps/desktop/release/*-setup.exe
 
 
 # ─────────────────────────────────────────────────────────────

@@ -8,9 +8,31 @@
 
 // 语言这个类型定义在 core 里（重复规则的描述也要按语言走），这里只是转出来
 import type { Lang } from '@kapibala/core/rrule'
+// 平台只影响两个写法：快捷键提示和"在访达/资源管理器里显示"。i18n 不碰 node，
+// 所以由调用方把 preload 给的平台传进来（见 ipc 的 Platform）
+import type { Platform } from '@kapibala/ipc'
 export type { Lang }
 export const LANGS: Lang[] = ['zh', 'en']
 export const isLang = (x: unknown): x is Lang => x === 'zh' || x === 'en'
+
+/** 快捷键提示按平台写：Mac 上是 ⌘↩，Windows 上写 Ctrl+Enter 才认得出来 */
+const shortcut = (p: Platform) => (p === 'darwin' ? '⌘↩' : 'Ctrl+Enter')
+/** 打开日志所在文件夹用的文件管理器名字 */
+const fileManager = (p: Platform) => (p === 'darwin' ? 'Finder' : '文件资源管理器')
+
+/**
+ * 按平台变的那几句统一放这里（两边语言各一份，形状由 EN: typeof ZH 卡住）。
+ * 单列一处有两个好处：写新句子时一眼看到"这一句两个平台都得有说法"，
+ * 以及 i18n.test.ts 能把这一组**自动**在两个平台上各过一遍 —— 加句子不用改测试。
+ */
+const ZH_PLATFORM = {
+  notesHint: (p: Platform) => `自动保存 · ${shortcut(p)} 收起`,
+  logReveal: (p: Platform) => `在${fileManager(p)}中显示`,
+}
+const EN_PLATFORM: typeof ZH_PLATFORM = {
+  notesHint: (p) => `Saved automatically · ${shortcut(p)} to close`,
+  logReveal: (p) => (p === 'darwin' ? 'Show in Finder' : 'Show in File Explorer'),
+}
 
 /**
  * 系统语言 → 界面语言。只有明确是英文才用英文，其余（法语、日语、拿不到语言）
@@ -112,14 +134,13 @@ const ZH = {
   notesEmpty: '写点备注…（支持 Markdown）',
   notesNoSelection: '选中一个任务，在这里写备注。<br>支持 Markdown。',
   notesEditPlaceholder: '支持 Markdown：**粗体** *斜体* `代码` - 列表 [链接](https://…)',
-  notesHint: '自动保存 · ⌘↩ 收起',
   /** 左边缘那条可拖动的分隔线 */
   detailResizeTip: '拖动调整宽度，双击恢复默认',
 
   // ── 提示条 ──
   bannerReadOnly: '这个库的格式比当前版本新，已按只读打开',
   bannerForked: '这个设备目录不属于本机（库被复制或迁移过），已换用新的设备身份',
-  bannerIncomplete: '有文件还没从 iCloud 下载下来，任务可能显示不全，落地后会自动补上',
+  bannerIncomplete: '有文件还没从同步盘下载下来，任务可能显示不全，落地后会自动补上',
   bannerBadLines: (n: number) => `跳过了 ${n} 行坏数据`,
 
   // ── 库列表 ──
@@ -134,7 +155,7 @@ const ZH = {
 
   // ── 引导页 ──
   welcomeTitle: '请选择一个目录存储数据',
-  welcomeSync: '<b>要在多台 Mac 之间同步</b>，选一个 iCloud 云盘里的目录',
+  welcomeSync: '<b>要在多台设备之间同步</b>，选一个同步盘里的目录（iCloud / OneDrive / 坚果云都行）',
   welcomeLocal: '<b>只想留在本机</b>，选「文稿」或任何别的地方',
   welcomeUndo: '<b>随时能反悔</b>，之后可以换库；删掉 App，文件夹还是你的',
   welcomePick: '选择文件夹…',
@@ -149,11 +170,10 @@ const ZH = {
   logTitle: '日志',
   logCopy: '复制全部',
   logCopied: '已复制',
-  logReveal: '在 Finder 中显示',
 
   // ── 主进程：对话框和右键菜单 ──
   pickTitle: '选择一个文件夹作为 Kapibala 库',
-  pickMessage: '想在多台 Mac 之间同步，就选 iCloud Drive 里的目录',
+  pickMessage: '想在多台设备之间同步，就选同步盘里的目录',
   pickButton: '使用这个文件夹',
   pickFailed: '这个文件夹不能用作库',
   ok: '好',
@@ -168,8 +188,15 @@ const ZH = {
   menuRestore: '恢复',
   menuPurge: '彻底删除',
   dockOpen: '打开主界面',
+  /** 托盘菜单里的退出。macOS 没有托盘，这句只出现在 Windows 上 */
+  trayQuit: '退出',
+  /** 第一次收起窗口时弹的气泡：告诉用户应用没关，只是躲在托盘里了 */
+  trayHint: 'Kapibala 还在后台运行，点托盘图标可以回来',
   errNoVault: '还没有打开任何库',
   errVaultGone: '这个库已经不在列表里了',
+
+  // 按平台变的几句单列在文件开头，见 ZH_PLATFORM
+  platform: ZH_PLATFORM,
 }
 
 /** 英文那份必须和中文一一对应，类型对不上就编译不过 */
@@ -245,12 +272,11 @@ const EN: typeof ZH = {
   notesEmpty: 'Write a note… (Markdown supported)',
   notesNoSelection: 'Select a task to write a note here.<br>Markdown supported.',
   notesEditPlaceholder: 'Markdown: **bold** *italic* `code` - list [link](https://…)',
-  notesHint: 'Saved automatically · ⌘↩ to close',
   detailResizeTip: 'Drag to resize, double-click to reset',
 
   bannerReadOnly: 'This vault was written by a newer version, so it is open read-only',
-  bannerForked: 'This device folder belongs to another Mac (the vault was copied or migrated), so a new device identity is in use',
-  bannerIncomplete: 'Some files have not come down from iCloud yet, so tasks may be missing. They will appear once they land',
+  bannerForked: 'This device folder belongs to another computer (the vault was copied or migrated), so a new device identity is in use',
+  bannerIncomplete: 'Some files have not come down from your sync drive yet, so tasks may be missing. They will appear once they land',
   bannerBadLines: (n) => `Skipped ${n} bad line${n === 1 ? '' : 's'}`,
 
   vaultSheetTitle: 'Switch vault',
@@ -263,8 +289,8 @@ const EN: typeof ZH = {
   close: 'Close',
 
   welcomeTitle: 'Pick a folder to keep your data in',
-  welcomeSync: '<b>To sync across Macs</b>, pick a folder inside iCloud Drive',
-  welcomeLocal: '<b>To stay on this Mac only</b>, pick Documents or anywhere else',
+  welcomeSync: '<b>To sync across devices</b>, pick a folder inside a sync drive (iCloud, OneDrive, Dropbox, …)',
+  welcomeLocal: '<b>To stay on this computer only</b>, pick Documents or anywhere else',
   welcomeUndo: '<b>Nothing is locked in</b> — you can switch vaults later, and deleting the app leaves the folder yours',
   welcomePick: 'Choose folder…',
   welcomeOpening: 'Opening…',
@@ -273,14 +299,13 @@ const EN: typeof ZH = {
   welcomeFailed: (msg) => `Cannot open this folder: ${msg}`,
 
   syncTitle: 'Syncing…',
-  syncSub: 'Reading what your other Mac just changed — one moment',
+  syncSub: 'Reading what your other device just changed — one moment',
   logTitle: 'Log',
   logCopy: 'Copy all',
   logCopied: 'Copied',
-  logReveal: 'Show in Finder',
 
   pickTitle: 'Pick a folder for your Kapibala vault',
-  pickMessage: 'To sync across Macs, pick a folder inside iCloud Drive',
+  pickMessage: 'To sync across devices, pick a folder inside a sync drive',
   pickButton: 'Use this folder',
   pickFailed: 'This folder cannot be used as a vault',
   ok: 'OK',
@@ -291,8 +316,12 @@ const EN: typeof ZH = {
   menuRestore: 'Restore',
   menuPurge: 'Delete for good',
   dockOpen: 'Open Kapibala',
+  trayQuit: 'Quit',
+  trayHint: 'Kapibala is still running in the background — click the tray icon to bring it back',
   errNoVault: 'No vault is open yet',
   errVaultGone: 'That vault is no longer on the list',
+
+  platform: EN_PLATFORM,
 }
 
 export type Strings = typeof ZH

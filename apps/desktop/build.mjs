@@ -12,3 +12,6 @@ await build({ ...common, entryPoints: ['src/preload.ts'], outfile: 'dist/preload
 await build({ ...common, entryPoints: ['src/renderer/app.ts'], outfile: 'dist/renderer/app.js',
               platform: 'browser', format: 'iife', target: 'safari18' })
 await cp('src/renderer/index.html', 'dist/renderer/index.html')
+// Windows 托盘的图标。主进程按 __dirname 找它，所以必须落在 dist 里（打包时跟着 asar 一起进去）
+await mkdir('dist/assets', { recursive: true })
+await cp('assets/tray.png', 'dist/assets/tray.png')

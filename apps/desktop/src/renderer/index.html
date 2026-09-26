@@ -34,7 +34,11 @@
    display:flex 都会把它压掉。覆盖层就会从启动起一直显示、还关不掉。 */
 [hidden]{ display:none !important }
 body{
-  font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;
+  /* 前面三个是 macOS 的（-apple-system 取系统字体），后面三个是 Windows 的。
+     Windows 上如果只留 Mac 那套，全都命中不了，中文会掉到宋体去 —— 同一个界面
+     在两个系统上看着像两个应用，差的就是这一行 */
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",
+       "Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
   color:var(--text); background:var(--bg); height:100vh; overflow:hidden;
   -webkit-font-smoothing:antialiased;
 }
@@ -370,7 +374,7 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
   --tick:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2010%2010'%3E%3Cpath%20d='M1.9%205.3%204%207.4%208.1%202.6'%20fill='none'%20stroke='%23000'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
   -webkit-mask:var(--tick) center/11px 11px no-repeat;
           mask:var(--tick) center/11px 11px no-repeat }
-.md code{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+.md code{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace; font-size:11.5px;
           background:var(--row-hover); padding:1px 4px; border-radius:4px }
 .md pre{ background:var(--row-hover); padding:8px 10px; border-radius:7px; overflow-x:auto; margin:.45em 0 }
 .md pre code{ background:none; padding:0 }
@@ -390,7 +394,7 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 
 /* 桌面版新增 */
 .app{ -webkit-user-select:none; user-select:none }
-.sidebar{ padding-top:34px }            /* 让出 hiddenInset 标题栏 */
+.sidebar{ padding-top:34px }            /* 让出标题栏（macOS 是红绿灯，Windows 是那一条 34px 的按钮带） */
 .vault{ margin:0 0 8px; padding:6px 9px; font-size:12px; color:var(--text); line-height:1.4;
         border:1px solid var(--border); background:transparent; text-align:left; width:100%;
         font-family:inherit; border-radius:7px; cursor:default;
@@ -478,7 +482,7 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .sheet-head .path{ color:var(--dim); font-size:11px; margin-left:auto; user-select:text;
                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; max-width:60% }
 .sheet pre{ margin:0; padding:14px 16px; overflow:auto; flex:1; font-size:11.5px; line-height:1.55;
-            font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap;
+            font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace; white-space:pre-wrap;
             word-break:break-all; -webkit-user-select:text; user-select:text; color:var(--text) }
 .sheet-foot{ display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border) }
 .sheet-foot button{ font:inherit; font-size:12.5px; padding:6px 13px; border-radius:7px;
@@ -501,6 +505,15 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
            -webkit-app-region:drag; app-region:drag }
 /* 可拖动区域里的可点击元素要单独排除，否则点不动 */
 .titlebar *, .nav, button, input, select{ -webkit-app-region:no-drag; app-region:no-drag }
+
+/* ── Windows 的标题栏 ──
+   那边藏掉标题栏后，最小化/最大化/关闭三个按钮是系统画在右上角的
+   （BrowserWindow 的 titleBarOverlay，主进程里给的高度也是 34px），它压着页面画。
+   三个栏各自顶上都留了 34px，所以展开时按钮正好压在那片空白上，不用管；
+   只有详情栏收起后主区顶到右边缘，标题行右边那枚按钮会钻到系统按钮底下 ——
+   给它让出三个按钮的宽度（Windows 11 实测约 138px，取整 150）。
+   macOS 的红绿灯在左上角，所以那边不用这条，靠侧边栏自己的 padding-top 避开 */
+html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
 </style>
 </head>
 <body>

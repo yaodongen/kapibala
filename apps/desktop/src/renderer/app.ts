@@ -17,6 +17,15 @@ declare global { interface Window { kapi: Api } }
 const kapi = window.kapi
 
 /**
+ * 运行平台。只为两件事存在：Windows 上标题栏右边要给系统那三个按钮让位
+ * （见 index.html 里的 html[data-os=win]），以及快捷键提示该写 ⌘ 还是 Ctrl。
+ * 别拿它去分叉界面逻辑 —— 那正是两个平台开始各长各的起点。
+ */
+const OS = kapi.platform
+// 挂到 <html> 上给 CSS 用。必须在第一次画之前挂好，否则收起详情栏时右边会先画错一帧
+document.documentElement.dataset['os'] = OS === 'darwin' ? 'mac' : 'win'
+
+/**
  * 界面语言。主进程说了算（它知道系统语言，也存着用户改过的选择），
  * 这里只是拿到手就用。所有文案都在 render() 时取，切换语言不用重启窗口。
  */
@@ -325,7 +334,7 @@ function applyStatic() {
     ['vaultforgetnote', S.vaultForgetNote], ['vaultclose', S.close],
     ['synctitle', S.syncTitle], ['syncsub', S.syncSub],
     ['logsheettitle', S.logTitle], ['logcopy', S.logCopy],
-    ['logreveal', S.logReveal], ['logclose', S.close],
+    ['logreveal', S.platform.logReveal(OS)], ['logclose', S.close],
   ]
   for (const [id, v] of text) $(id).textContent = v
   // 左下角显示当前的版本号；点它和"查看日志"是一回事，所以提示语沿用那句。
@@ -740,7 +749,7 @@ function renderDetail() {
   if (!typingNote) $('dbody').innerHTML = editing
     ? `<textarea class="noteedit" data-noteedit="${t.id}"
          placeholder="${esc(S.notesEditPlaceholder)}">${esc(t.notes ?? '')}</textarea>
-       <div class="notehint">${esc(S.notesHint)}</div>`
+       <div class="notehint">${esc(S.platform.notesHint(OS))}</div>`
     : `<div class="md" data-noteview="${t.id}">${renderMarkdown(t.notes ?? '')}</div>`
 }
 

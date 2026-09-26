@@ -152,6 +152,19 @@ export type Events = {
 
 `task:setField` maps directly onto one op in the storage layer. **Do not invent an IPC command per field** — fields keep getting added, and the IPC surface should not grow with them.
 
+### Platform decisions live in exactly two places (macOS / Windows)
+
+Both platforms share one UI codebase, and platform forks are deliberately kept to a minimum — the more forks there are, the more the two sides drift apart, and nobody runs the Windows half day to day.
+
+| Where | What it decides |
+| --- | --- |
+| `PLATFORM` in `apps/desktop/src/main.ts` | **The single source of truth.** `isMac` picks the title bar (`hiddenInset` vs `titleBarOverlay`), tray vs Dock menu, and what closing the window means |
+| `isMac` / `isWin` in `packages/adapters-node` | Local state directory (`Application Support` vs `%APPDATA%`), machineId (`IOPlatformUUID` vs `MachineGuid`), iCloud placeholders |
+
+The renderer **never reads** `process.platform` itself: the main process decides, hands the result to the preload through `webPreferences.additionalArguments`, and the UI only knows `window.kapi.platform` (it needs the value on the first frame, so an IPC round trip is too late). That way, when you exercise the Windows branch on a Mac, the UI and the main process cannot disagree. Strings that vary by platform are grouped under `platform` in the i18n dictionary, and the unit tests walk that group on both platforms — adding one needs no test changes.
+
+`KAPIBALA_OS=win32` runs the whole Windows branch on a Mac (unpackaged builds only): tray, title bar, close-to-tray, layout insets and keyboard hints all switch over. Without it that half could only be verified by reading code.
+
 ---
 
 ## 6. State management: Zustand, and keep it thin

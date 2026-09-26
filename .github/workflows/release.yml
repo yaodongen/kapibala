@@ -8,10 +8,33 @@ on:
 permissions:
   contents: write             # 创建 release 需要
 
+# 每个平台各自构建、各自把产物传成 artifact，发布由最后那个 release job 一次做完。
+# 别让每个平台自己去动 release —— 那样两个 job 会抢同一个 tag，谁先谁后全看运气，
+# 而且 release notes 会被覆盖。以后加平台（Linux 之类）就是再往矩阵里添一行。
 jobs:
-  macos:
-    runs-on: macos-latest     # macos-14 起默认就是 arm64，与 electron-builder 的 target 对齐
-    timeout-minutes: 30
+  build:
+    strategy:
+      fail-fast: false        # 一个平台挂了，另一个的产物还是值得看
+      matrix:
+        include:
+          - os: macos-latest  # macos-14 起默认就是 arm64，与 electron-builder 的 target 对齐
+            name: mac
+            script: dmg
+            artifact: Kapibala-mac
+            files: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.blockmap
+              apps/desktop/release/latest-mac.yml
+          - os: windows-latest
+            name: win
+            script: win
+            artifact: Kapibala-win
+            files: |
+              apps/desktop/release/*-setup.exe
+              apps/desktop/release/*-setup.exe.blockmap
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +51,10 @@ jobs:
 
       # electron-builder 的版本号取自 apps/desktop/package.json，不是 tag。
       # 不核对的话，打了 v0.0.2 却忘改 package.json，产出的还是 0.0.1 的包。
+      # Windows 上默认 shell 是 pwsh，这几行是 bash 写法
       - name: 核对 tag 与 package.json 的版本号
         if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         run: |
           V=$(node -p "require('./apps/desktop/package.json').version")
           if [ "v$V" != "${GITHUB_REF_NAME}" ]; then
@@ -37,28 +62,40 @@ jobs:
             exit 1
           fi
 
+      # 这一层是纯逻辑（文件系统全是内存里的假实现），两个平台跑出来必须一样
       - name: 类型检查与测试
         run: pnpm typecheck && pnpm test
 
-      # 真实文件系统上模拟多台 Mac 同步。存储层出问题绝不能发包
-      - name: e2e
+      # e2e 要真的碰文件系统，脚本是按 POSIX 路径和 /tmp 写的，只在 mac 上跑。
+      # Windows 那边的文件系统语义（rename 覆盖、锁文件、并发写）由真机验收覆盖
+      - name: e2e（真实文件系统上模拟多台机器同步）
+        if: runner.os == 'macOS'
         run: bash scripts/e2e.sh
 
-      - name: 打 dmg
-        run: pnpm --filter kapibala-desktop dmg
+      - name: 打包
+        run: pnpm --filter kapibala-desktop ${{ matrix.script }}
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: Kapibala-arm64
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest-mac.yml
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
           if-no-files-found: error
 
+  # 两个平台的包一起挂到同一个 release 上。手动触发（workflow_dispatch）时只出 artifact
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 取回各平台的构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: 发布 release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           draft: false         # 直接发布。make tag 已经有四道检查，不需要再加一道人工确认
@@ -66,14 +103,20 @@ jobs:
           body: |
             ## 安装
 
-            Apple 芯片下载 `arm64`，Intel 芯片下载 `x64`。拖进「应用程序」即可。
+            **macOS**：Apple 芯片下载 `arm64`，Intel 芯片下载 `x64`，打开 dmg 把 Kapibala 拖进「应用程序」。
 
-            > **这个包没有经过 Apple 公证**，首次打开会被 Gatekeeper 拦下。两种办法：
+            > 这个包没有经过 Apple 公证，首次打开会被 Gatekeeper 拦下。两种办法：
             >
             > - 双击一次（会被拒），然后到「系统设置 → 隐私与安全性」，在下方点「仍要打开」
             > - 或者终端里一句：`xattr -dr com.apple.quarantine /Applications/Kapibala.app`
 
-          files: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest-mac.yml
+            **Windows**：下载 `Kapibala-<版本>-x64-setup.exe`，一路下一步。装到当前用户目录，不需要管理员权限。
+
+            > 同样没有代码签名，SmartScreen 会拦一下：点「更多信息」→「仍要运行」。
+            > 关掉窗口是收进托盘（不是退出），右键托盘图标选「退出」才真的退出。
+
+            ## 数据在哪
+
+            任务存在你自己选的文件夹里，纯文本，应用本身不联网。想多台设备同步就把这个
+            文件夹放进 iCloud Drive / OneDrive / 坚果云之类的同步盘。
+          files: dist/**

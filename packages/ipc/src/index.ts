@@ -1,6 +1,26 @@
 /** 主进程与渲染进程共享的契约。渲染进程只认识这些，永远看不到 op 和 HLC */
 import type { Lang, RepeatRule, Task } from '@kapibala/core'
 
+/**
+ * 运行平台。只为两件小事存在：标题栏要不要给系统按钮让位、快捷键提示写 ⌘ 还是 Ctrl。
+ * 界面逻辑不按它分叉 —— 分叉越多，两个平台就越容易各长各的。
+ */
+export type Platform = 'darwin' | 'win32' | 'other'
+
+/** 平台判定只有这一个入口。认 darwin / win32 两个，其余（linux 之类）一律 other。
+ *  forced 认不出来的值直接忽略 —— 环境变量写错一个字不该把平台判成 other */
+export const platformOf = (raw: string | undefined, forced?: string): Platform => {
+  const p = forced === 'darwin' || forced === 'win32' ? forced : raw
+  return p === 'darwin' ? 'darwin' : p === 'win32' ? 'win32' : 'other'
+}
+
+/**
+ * 主进程把自己的判定结果通过 webPreferences.additionalArguments 递给 preload 用的参数名。
+ * 渲染进程那边不自己判断平台：只有主进程知道打没打包、认不认开发期的 KAPIBALA_OS，
+ * 两边各判一次迟早会不一致（那边看的是 mac 的留白，这边跑的是 Windows 的托盘）。
+ */
+export const PLATFORM_ARG = '--kapi-platform='
+
 export type VaultState = {
   id: string
   /** 这台机器上次在这个库里选中的任务 */
@@ -172,6 +192,8 @@ export const CHANNELS = [
 export type Api = {
   [K in keyof Commands]: (...a: Parameters<Commands[K]>) => Promise<ReturnType<Commands[K]>>
 } & {
+  /** 运行平台。preload 直接给的常量，不走 IPC —— 界面第一帧就要用它决定标题栏留白 */
+  platform: Platform
   onTasksChanged(cb: (tasks: Task[]) => void): void
   onSyncBusy(cb: (busy: boolean) => void): void
   onThemeChanged(cb: (theme: Theme) => void): void

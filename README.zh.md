@@ -120,6 +120,10 @@ make install-app
 
 刚 clone 下来时先跑一次 `make install`。其余命令（启动开发版、测试、打 dmg、CLI）都在 `make help` 里。
 
+**Windows**：`make win` 打出 `apps/desktop/release/Kapibala-*-setup.exe`（在 Mac 上交叉打包也可以）。在 Windows 本机上则是 `corepack enable` 之后跑 `pnpm --filter kapibala-desktop win`。
+
+Windows 上有两处和 macOS 不一样，都是系统决定的：关掉窗口是**收进托盘**（右键托盘选「退出」才真的退出，不然窗口关了就既回不来也退不掉）；库和界面偏好放在 `%APPDATA%\Kapibala`，和 Mac 上一样不进库目录。同步照旧——OneDrive、坚果云、Dropbox 都行，只是不再有 iCloud 那种"占位符还没下载下来"的概念。
+
 设计说明在 [`docs/`](./docs)：[`architecture.zh.md`](./docs/architecture.zh.md) 讲各部分怎么配合，[`storage.zh.md`](./docs/storage.zh.md) 讲磁盘上的格式。
 
 ## 8. 许可

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 从 ui/icon.svg 重新导出 PNG 和 macOS 的 .icns
+# 从 ui/icon.svg 重新导出 PNG、macOS 的 .icns 和 Windows 托盘的 png
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../ui"
 command -v rsvg-convert >/dev/null || { echo "需要 rsvg-convert：brew install librsvg"; exit 1; }
@@ -15,6 +15,14 @@ rm -rf icon.iconset
 rsvg-convert -w 512  -h 512  icon.svg -o icon-512.png
 rsvg-convert -w 1024 -h 1024 icon.svg -o icon-1024.png
 
+# Windows 托盘的图标。任务栏那一格实际只有 16px，所以先按 40px 渲染、把 macOS 那圈
+# 透明边（图标本体只占画布的 80%）裁掉再缩到 32 —— 留一点点边就够，一点也不留的话
+# 水豚的鼻子会顶到画布边上，小尺寸下就是一团糊
+rsvg-convert -w 40 -h 40 icon.svg -o /tmp/kapi-tray-40.png
+sips -c 35 35 /tmp/kapi-tray-40.png --out /tmp/kapi-tray-35.png >/dev/null
+sips -z 32 32 /tmp/kapi-tray-35.png --out ../apps/desktop/assets/tray.png >/dev/null
+rm -f /tmp/kapi-tray-40.png /tmp/kapi-tray-35.png
+
 # dmg 的图标（app 图标 + 装入角标），同时也是挂载后桌面上那个卷的图标
 rm -rf dmg.iconset && mkdir -p dmg.iconset
 for sz in 16 32 128 256 512; do
@@ -29,4 +37,4 @@ rsvg-convert -w 1080 -h 760 dmg-background.svg -o /tmp/kapi-bg-2x.png
 tiffutil -cathidpicheck /tmp/kapi-bg-1x.png /tmp/kapi-bg-2x.png -out ../apps/desktop/build/background.tiff
 rm -f /tmp/kapi-bg-1x.png /tmp/kapi-bg-2x.png
 
-echo "已导出 Kapibala.icns / dmg.icns / icon-512.png / icon-1024.png / build/background.tiff"
+echo "已导出 Kapibala.icns / dmg.icns / icon-512.png / icon-1024.png / build/background.tiff / apps/desktop/assets/tray.png"

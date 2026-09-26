@@ -43,6 +43,26 @@ mac:
   # 下载下来会被 Gatekeeper 报"已损坏"）。分发给别人仍需真证书 + 公证。
   identity: "-"
 
+win:
+  # 给 png 就行：electron-builder 自己会转成 .ico（要求 ≥256×256，这张是 1024）。
+  # 想省掉那圈透明边（图标本体的 80% 是给 macOS Dock 定的）就另做一张 .ico 放这儿
+  icon: ../../ui/icon-1024.png
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  # 不请求管理员：装到当前用户目录就够，UAC 弹窗能省则省。库在用户自己的目录里
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  # 一路下一步能装完，但允许改目录、不搞静默安装 —— 和 dmg 那边"拖进去"是一个意思
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Kapibala
+
 dmg:
   title: Kapibala ${version}
   # 一眼能看出是安装包：app 图标 + 装入角标。挂载后桌面上那个卷用的也是它

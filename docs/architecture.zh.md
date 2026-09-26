@@ -149,6 +149,19 @@ export type Events = {
 
 `task:setField` 这种通用命令直接对应存储层的一条 op，**不要为每个字段发明一个 IPC 命令**——字段会一直加，IPC 表面不该跟着膨胀。
 
+### 平台判断只有两处（macOS / Windows）
+
+两个平台共用同一份界面代码，平台分叉刻意压到最少 —— 分叉越多，两边就越容易各长各的，而 Windows 那半边平常没人天天跑。
+
+| 判断在哪 | 管什么 |
+| --- | --- |
+| `apps/desktop/src/main.ts` 的 `PLATFORM` | **唯一真相**。`isMac` 决定标题栏（`hiddenInset` / `titleBarOverlay`）、托盘还是 Dock 菜单、关窗口的语义 |
+| `packages/adapters-node` 的 `isMac` / `isWin` | 本机状态目录（`Application Support` / `%APPDATA%`）、machineId（`IOPlatformUUID` / `MachineGuid`）、iCloud 占位符 |
+
+渲染进程**不自己读** `process.platform`：主进程判完，用 `webPreferences.additionalArguments` 把结果递给 preload，界面只认 `window.kapi.platform`（第一帧就要用，等不了 IPC 往返）。这样在 Mac 上跑 Windows 分支做验证时，界面和主进程不会一个按 mac、一个按 Windows。按平台变的文案集中在 i18n 的 `platform` 分组，单元测试把这一组在两个平台上各跑一遍 —— 加一句平台文案不用回来改测试。
+
+`KAPIBALA_OS=win32` 能在 Mac 上把 Windows 那条分支整条跑起来（只在未打包时生效）：托盘、标题栏、关窗口收进托盘、界面留白、快捷键提示全都跟着变。没有它，那半边只能靠读代码。
+
 ---
 
 ## 6. 状态管理：Zustand，而且要薄

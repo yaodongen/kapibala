@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.10.0 — 2026-09-26
+
+- Kapibala runs on Windows now. Closing the window hides it to the system tray instead of quitting — right-click the tray icon and pick Quit to really exit — and the window buttons are drawn by Windows itself, so the app keeps the same borderless look as on the Mac. Local data lives in `%APPDATA%\Kapibala`, and every release from now on ships a Windows installer (`Kapibala-<version>-x64-setup.exe`) next to the macOS dmg. The sync wording is no longer Mac-and-iCloud specific: put the vault folder in OneDrive, Dropbox, Nutstore or iCloud Drive and your tasks follow you across machines; `Ctrl+Enter` closes the note editor on Windows.
+- 支持 Windows 了。关掉窗口会收进系统托盘而不是退出（右键托盘图标选「退出」才真的退出），窗口按钮交给系统画在右上角，界面和 Mac 上一样没有标题栏；本机数据放在 `%APPDATA%\Kapibala`，以后每个版本都会同时出一个 Windows 安装包（`Kapibala-<版本>-x64-setup.exe`）和 macOS 的 dmg。同步相关的文案也不再写死 Mac 和 iCloud —— 库放进 OneDrive、Dropbox、坚果云或 iCloud Drive 都行，多台设备共用一个文件夹即可；Windows 上收起备注编辑框是 `Ctrl+Enter`。
+
 ## 1.9.1 — 2026-09-26
 
 - Both side panes can be collapsed to give the task list or the calendar the whole window: the `«` button at the right of the sidebar header hides the sidebar (a `☰` button at the front of the main header brings it back), and the `»` button at the right of that header hides the detail pane. Both states are remembered in `ui.json`, and while the detail pane is hidden clicking a task only selects it instead of pulling the pane back.
