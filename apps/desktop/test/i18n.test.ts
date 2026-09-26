@@ -77,7 +77,7 @@ describe('两份文案', () => {
   it('视图名和视图 id 对得上（render() 直接按 id 取名字）', () => {
     for (const lang of LANGS) {
       const S = t(lang)
-      for (const id of ['today', 'next7', 'calendar7', 'calendar14', 'next30', 'all', 'done', 'trash'] as const) {
+      for (const id of ['today', 'next7', 'calendar7', 'calendar14', 'calendarCustom', 'next30', 'all', 'done', 'trash'] as const) {
         expect(typeof S[id]).toBe('string')
         expect(typeof S[`${id}Sub` as 'next7Sub']).not.toBe('undefined')
       }

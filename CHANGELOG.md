@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.0 — 2026-09-26
+
+- A third calendar view, Calendar (custom), where you drag across the days to pick the span you want — up to 36 days, laid out three to six to a row — and it stays picked: the range is stored as real dates in `ui.json`, so the next time you open the app, or come back from another list, it is still that calendar, with the earliest day of the range on the first row. The sidebar entry shows the span underneath it, and the toolbar can pick a new range, clear it, or change the columns per row. The three calendar views now share one set of preferences: window size and whether the detail pane is collapsed are the same in 7d, 14d and custom. The range picker opens on the current month, and its Back to today button is gone.
+- 新增第三个日历视图「日历视图（自定义）」：在日期上划过去选出想看的那几天（最多 36 天，一行放 3~6 列），选中之后就一直作数 —— 范围按绝对日期存进 `ui.json`，下次打开、或者从别的列表切回来，看到的还是这段日历，而且范围里最早那天就在第一行。侧栏那一项下面显示范围，顶栏可以重选范围、清空范围、改每行几列。三个日历视图现在还共用一份配置：窗口大小、详情栏收没收起，7d / 14d / 自定义都是同一个样子。重选范围时从当前月份看起，那一屏的「回到今天」按钮去掉了（进来本来就停在那儿）。
+
 ## 1.10.0 — 2026-09-26
 
 - Kapibala runs on Windows now. Closing the window hides it to the system tray instead of quitting — right-click the tray icon and pick Quit to really exit — and the window buttons are drawn by Windows itself, so the app keeps the same borderless look as on the Mac. Local data lives in `%APPDATA%\Kapibala`, and every release from now on ships a Windows installer (`Kapibala-<version>-x64-setup.exe`) next to the macOS dmg. The sync wording is no longer Mac-and-iCloud specific: put the vault folder in OneDrive, Dropbox, Nutstore or iCloud Drive and your tasks follow you across machines; `Ctrl+Enter` closes the note editor on Windows.

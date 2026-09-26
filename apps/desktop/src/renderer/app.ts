@@ -9,7 +9,9 @@ import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
-import { DEFAULT_DETAIL_WIDTH, viewSlot, WIN_SLOTS, type Api, type FieldOpIpc, type Theme,
+import { CUSTOM_CAL_COLS, CUSTOM_CAL_MAX_DAYS, DEFAULT_DETAIL_WIDTH, calRangeDays, clampCalRange,
+         viewSlot, WIN_SLOTS,
+         type Api, type CalRange, type FieldOpIpc, type Theme,
          type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
 import { t as dict, type Lang, type Strings } from '../i18n.ts'
 
@@ -60,10 +62,39 @@ const dayLabel = (ts: number) => {
   if (ts === t - DAY) return S.dayYesterday
   return S.dayLabel(new Date(ts))
 }
+/**
+ * 只报"几月几日"，不说"今天/昨天"。给自定义日历的范围文字用 ——
+ * "9月10日 – 昨天"这种混着相对说法的范围，跨天之后就没人看得懂了，
+ * 而这一屏存的是**绝对日期**（下次打开还是那几天）。
+ */
+const absDay = (ts: number) => S.dayLabel(new Date(ts))
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
+/* ── 日历视图（自定义）：一段用户自己拖出来的日期 ──
+ * 和 7d / 14d 那种"今天起 N 天"不同，这里存的是**绝对的两天**：选好之后重开应用，
+ * 看到的还是那几天（用户要的就是"记住这个范围"）。所以起止都归一化成当天零点再存。
+ */
+/** 选中格子的起止顺序不定（从后往前拖也该能用），排好序、各自归一化到零点 */
+function normRange(a: number, b: number): CalRange {
+  const x = dayStart(a), y = dayStart(b)
+  return x <= y ? { from: x, to: y } : { from: y, to: x }
+}
 /**
- * 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐。
+ * 这段范围一共几天（含头含尾）、超了 36 天怎么砍，都在 ipc 那边（calRangeDays /
+ * clampCalRange）。**别在这儿自己拿毫秒除 86400000**：跨夏令时那天两个零点差 23 小时，
+ * 除出来会少一天 —— 上限就时松时紧，而这两个函数有单测盯着。
+ */
+const rangeDays = (r: CalRange) => calRangeDays(r)
+const clampRange = (r: CalRange) => clampCalRange(r)
+/** 侧栏副标题：选过就报范围，没选过就说还没选 */
+function customCalSub(): string {
+  return customRange
+    ? S.calendarCustomSub(absDay(customRange.from), absDay(customRange.to), customCols)
+    : S.calendarCustomNone
+}
+
+/**
+ * 不做清单，所以就这 9 项。名字和副标题都从字典取，键名和视图 id 对齐。
  * id 那一层在 ipc 里（主进程要拿它校验 ui.json、分窗口大小），这里只管怎么画。
  */
 const VIEWS = [
@@ -72,20 +103,26 @@ const VIEWS = [
   { id: 'next30', ico: '▦', sub: () => S.next30Sub },
   { id: 'calendar7',  ico: '▥', sub: () => S.calendar7Sub },
   { id: 'calendar14', ico: '▩', sub: () => S.calendar14Sub },
+  { id: 'calendarCustom', ico: '✥', sub: () => customCalSub() },
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
 ] as const satisfies readonly { id: ViewId; ico: string; sub: () => string }[]
 
 /**
- * 两个日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
+ * 两个固定日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
  * 7 天 = 逾期 + 7 = 8 格，铺成 4 列 × 2 行；14 天 = 15 格，铺成 5 列 × 3 行 ——
  * 都刚好铺满，不留半行。列数写进 --cal-cols，布局在 index.html 的 .list.cal 里。
+ *
+ * 第三个日历视图（calendarCustom）不在这儿：它的天数和列数都是用户定的，
+ * 见下面的 customRange / customCols。
  */
 const CAL: Partial<Record<ViewId, { days: number; cols: number }>> = {
   calendar7: { days: 7, cols: 4 },
   calendar14: { days: 14, cols: 5 },
 }
+/** 自定义日历的视图 id。它和 CAL 那两屏共用"铺格子"那套，只是天数和列数另给 */
+const CAL_CUSTOM: ViewId = 'calendarCustom'
 
 let tasks: Task[] = []
 let vault: VaultState | null = null
@@ -102,14 +139,83 @@ let view: ViewId = DEFAULT_VIEW
  */
 let showDone = false
 /**
+ * 日历视图（自定义）选的那段日期 + 一行放几列。没选过范围 = null。
+ * 和 showDone 一样是本机的界面偏好，存在 ui.json 里（不进库目录、不跟 iCloud 同步）——
+ * 下次打开还是这几天、这个摆法。范围是绝对的，不跟着"今天"走。
+ */
+let customRange: CalRange | null = null
+let customCols: number = CUSTOM_CAL_COLS.def
+/**
+ * 刚拖完一段范围、下一次渲染才铺成日历：这一次要把列表滚回第一行。
+ *
+ * 为什么需要它：拖选屏是条几千格的时间轴，用户往往一路滚下去挑日子，那个 scrollTop
+ * 比铺出来的日历高得多（实测 17193 对 430），浏览器把它夹到日历的最大值 —— 直接停在
+ * 最后几行，最早那几天在屏幕上方老远。选完的范围当然要从头看。
+ *
+ * 为什么不用"每次画日历都 scrollTop = 0"（试过，会把别处弄坏）：点一条任务、勾一下
+ * 也会走到这条渲染路径，那股劲儿会把用户正在看的滚动位置顶回顶部（实测点了下面那条
+ * 任务，scrollTop 从 238 变回 0）。所以只在"这一笔刚落地"时置一次，用完就清。
+ *
+ * 7d / 14d 两屏不用管：高度固定、行数就那么几行，切回来接着上次的位置挺好。
+ */
+let freshCalTop = false
+/**
+ * 正在拖选范围（"选范围那一屏"）。它和"铺好格子的日历"是同一屏的两个状态：
+ * 选的时候只画日期，选完松手就存下、当场铺成日历。
+ *
+ * 没选过范围时，切进这一屏就是它；选过之后只有从顶栏点「重选范围」才回到它（见
+ * enterCustomCal）—— 有范围就直接铺那段日历，选好的东西不该被切视图弄丢。
+ */
+let pickingDays = false
+/**
+ * 没选过范围时，日历按这 7 天铺（**只是显示用，不写进 ui.json**）。
+ *
+ * 为什么是往后而不是往前：这一屏铺的是"要看哪几天"，往后才看得见安排；往前 7 天里
+ * 6 天已经过去了，画出来大半是空的。"逾期不进来"这条规矩也不受影响 —— 逾期本来就
+ * 落在今天之前，够不着这段。
+ *
+ * 它**不代表"用户选过了"**：状态仍然是没选过（下次进来照样先给拖选屏让他挑）。
+ * 用它只是避免"点了清空 → 那一屏出现一屏空格子"这种看着像坏了的画面。
+ */
+function defaultCustomRange(): CalRange {
+  const from = today()
+  const end = new Date(from)
+  end.setDate(end.getDate() + 6)
+  return { from, to: +end }
+}
+/**
+ * 这一屏现在按哪段范围画：选过就用选过的，没选过用上面那 7 天。
+ * 数据筛选和格子都走它，两处口径才一致 —— 只在一处兜底的话，
+ * 会出现"画了 7 个格子、里面却一条任务都没有"这种对不上的情况。
+ */
+const rangeForCustom = (): CalRange => customRange ?? defaultCustomRange()
+/**
+ * 选范围那一屏现在画着哪几个月。**用"相对 0 号的月序号"记，不是时间戳** ——
+ * 月份加减都用它（见 monthAt / monthNo）：拿某个月的日期去 setMonth 会在 31 号上溢出。
+ * selCount 是画了几个月 —— 一次画好的固定窗口（见 buildPickSpan），不是"能选多远"的上限。
+ */
+let selFrom = 0
+let selCount = 0
+/** 顶栏那个月份：滚动时跟着可视区第一个月走，让人知道自己滑到哪儿了 */
+let selLabel = dayStart(Date.now())
+/**
+ * 正在拖的这一笔：anchor = 按下那天（范围的一头，不动），at = **光标现在压在哪天**。
+ *
+ * at 记的是光标那天，不是"范围的末端"：从后往前划（先点 9/12 再划到 9/10）时末端
+ * 一直是 anchor，早退判断会把它当成"没动"而直接返回 —— 表现就是倒着拖永远只有 1 天
+ * （踩过）。范围由这两个值当场算出来，所以哪个方向划都对。
+ */
+let sweep: { anchor: number; at: number } | null = null
+/**
  * 左右两侧栏收起没有。收起是为了把任务列表 / 日历铺满，专心看安排。
  * 和详情栏宽度、语言、主题一样是本机的界面偏好，存在 ui.json 里（不进库目录、
  * 不跟 iCloud 同步）—— 下次打开还是这个样子。布局由 .app 上的两个类管（见 index.html）
  */
 let sideCollapsed = false
 /**
- * 详情栏收起没有。按视图分组各记一份（键同窗口大小：其余视图 / 日历 7d / 日历 14d），
+ * 详情栏收起没有。按视图分组各记一份（键同窗口大小：其余视图 / 日历），
  * 在日历里收起详情看格子，切回列表再回来它还是收着的。
+ * **三个日历视图共用日历那一份**：7d 里收起了详情，切到 14d、自定义也是收起的。
  * detailCollapsed 是**当前这一屏**的生效值，切视图时从 detailBySlot 里换一份。
  * 缓存在这里而不是每次问主进程：切视图要同步画，等一次往返会先闪一帧没收起的界面。
  */
@@ -225,6 +331,18 @@ function pick(v: ViewId): Task[] {
       : t.startAt !== undefined && t.startAt < t1)
     return undone().filter(t => t.startAt !== undefined && t.startAt < t1)
   }
+  /**
+   * 日历视图（自定义）：**只铺用户选的那几天，逾期一个都不进**。
+   *
+   * 这是它和 7d / 14d 最大的区别：那两屏本身就是"逾期 + 未来 N 天"，逾期是主角之一；
+   * 这里用户指定了要看哪几天，格子也只有那几天，逾期任务压根没有落脚的地方 ——
+   * 硬塞进去只能塞进第一天，看着像那天的事，是错的。
+   * 范围之外的安排当然也不进（包括范围开始之前那些过了期的）。
+   */
+  if (v === CAL_CUSTOM) {
+    const r = rangeForCustom()
+    return undone().filter(t => t.startAt !== undefined && t.startAt >= r.from && t.startAt < r.to + DAY)
+  }
   if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
   // 已完成视图里取消勾选也一样，先留一秒
@@ -287,6 +405,18 @@ function group(list: Task[], v: ViewId): Group[] {
  * 后面的天数不会整体往前挪。
  */
 type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?: boolean; today?: boolean }
+/**
+ * 一格里的先后：未完成在上、已完成沉底（见下），未完成那一段按**手排的 order** ——
+ * 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
+ * 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到。
+ * 两个日历视图共用（7d / 14d 和自定义），两处的格子顺序才不会各走各的。
+ */
+const isDoneCell = (t: Task) => showDone && t.completedAt !== undefined
+const byTime = (a: Task[]) => a.sort((x, y) => {
+  if (isDoneCell(x) !== isDoneCell(y)) return isDoneCell(x) ? 1 : -1
+  return isDoneCell(x) ? y.completedAt! - x.completedAt! : byOrder(x, y)
+})
+
 function calendarCells(list: Task[], days: number): CalCell[] {
   const t0 = today()
   const over: Task[] = []
@@ -307,18 +437,39 @@ function calendarCells(list: Task[], days: number): CalCell[] {
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
-  // 一格里的先后：未完成在上、已完成沉底（见下），未完成那一段按**手排的 order** ——
-  // 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
-  // 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到
-  const isDone = (t: Task) => showDone && t.completedAt !== undefined
-  const byTime = (a: Task[]) => a.sort((x, y) => {
-    if (isDone(x) !== isDone(y)) return isDone(x) ? 1 : -1
-    return isDone(x) ? y.completedAt! - x.completedAt! : byOrder(x, y)
-  })
   const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
   for (let i = 0; i < days; i++) {
     const d = t0 + i * DAY
     cells.push({ key: String(d), label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d) ?? []), today: i === 0 })
+  }
+  return cells
+}
+
+/**
+ * 自定义日历的格子：**只有范围里那几天，没有"已逾期"那一格**，一共 rangeDays 格。
+ *
+ * 用户选的就是他要看的那几天，凭空多一格"已逾期"既占了位置、又和"不带逾期"这件事打架
+ * （见 pick 里那段）。天数就是选出来的天数，一天不多一天不少 —— 列数不够整行时
+ * 最后一行少几个格子，空着就好。
+ */
+function customCalCells(list: Task[], r: CalRange): CalCell[] {
+  const t0 = today()
+  const byDay = new Map<number, Task[]>()
+  for (const t of list) {
+    if (t.startAt === undefined) continue
+    const d = dayStart(t.startAt)
+    const arr = byDay.get(d) ?? []
+    arr.push(t); byDay.set(d, arr)
+  }
+  const cells: CalCell[] = []
+  const end = new Date(r.to)
+  end.setDate(end.getDate() + 1)                        // 上界只用来兜住日期加减，多算一天不会多画
+  for (const d = new Date(r.from); +d < +end; d.setDate(d.getDate() + 1)) {
+    const day = dayStart(+d)
+    // 表头用**绝对日期**（不是 7d/14d 那种"今天/明天"）：这一屏铺的是用户自己选的
+    // 一段固定日期，配上一串相对说法反而看不懂自己选的是哪几天了
+    cells.push({ key: String(day), label: absDay(day), wd: weekday(day),
+                 items: byTime(byDay.get(day) ?? []), today: day === t0 })
   }
   return cells
 }
@@ -538,9 +689,10 @@ function keepScroll(): () => void {
 function render() {
   const restoreTitleEdit = keepTitleEdit()
   const restoreScroll = keepScroll()
-  $('nav').innerHTML = VIEWS.map((v, i) => {
+  $('nav').innerHTML = VIEWS.map(v => {
     const n = pick(v.id).length
-    return (i === 6 ? '<div class="sep"></div>' : '') +
+    // 已完成 / 垃圾桶和前面那 7 个列表之间隔一条线（按 id 认，别数下标 —— 加一个视图就错位）
+    return (v.id === 'done' ? '<div class="sep"></div>' : '') +
       `<button class="nav ${v.id === view ? 'on' : ''}" data-view="${v.id}">` +
       `<span class="ico">${v.ico}</span>${esc(S[v.id])}${n ? `<span class="n">${n}</span>` : ''}</button>`
   }).join('')
@@ -584,14 +736,46 @@ function render() {
    * 空库也不走下面那个"空状态"分支：日历把格子画出来本身就是有用的信息。
    */
   const cal = results ? undefined : CAL[view]
-  // 「显示已完成」只在日历视图出现：别的视图本来就没有格子可铺
+  /** 自定义日历：同一屏，但内容由 customRange 决定（没选过范围就是"拖选"那一屏） */
+  const custom = !results && view === CAL_CUSTOM
+  // 「显示已完成」只在两个固定日历视图出现：自定义那屏的格子是按用户选的日期铺的，
+  // 完成时间落在哪一天和"他要看的那几天"是两回事，别把它搅进来
   $('donesw').hidden = !cal
   setDoneSwitch()
-  $('list').classList.toggle('cal', !!cal)
+  $('list').classList.toggle('cal', !!cal || (custom && !pickingDays))
+  $('list').classList.toggle('calpicking', custom && pickingDays)
+  // 自定义日历的顶栏（范围、列数、翻月）。另外两屏没有这套东西，整块收起来
+  const tools = $('caltools') as HTMLElement
+  tools.innerHTML = custom ? calTools() : ''
+  tools.hidden = !custom
   if (cal) {
     $('list').style.setProperty('--cal-cols', String(cal.cols))
     renderDetail()
-    $('list').innerHTML = calendarGrid(visible, cal.days)
+    $('list').innerHTML = calendarGrid(calendarCells(visible, cal.days))
+    restoreScroll()
+    restoreTitleEdit()
+    return
+  }
+  if (custom) {
+    $('list').style.setProperty('--cal-cols', String(customCols))
+    renderDetail()
+    if (pickingDays) {
+      /**
+       * 时间轴是**一整条**（滚动位置 + 按需接的月份都在 DOM 里），render 每次都重建的话
+       * 滚动位置和接出来的月份就全丢了。所以只在三种情况下整套重建：
+       *   刚进这一屏（pickFresh）、DOM 里还没有（切走过）、换语言（文案要跟着变）
+       */
+      if (pickFresh || !pickBuilt() || pickBuiltLang !== lang) {
+        pickFresh = false
+        pickBuiltLang = lang
+        buildPickSpan(selLabel)      // 它自己会把整条时间轴建出来
+      } else markSweep()
+    } else {
+      // 走到日历态就一定画格子（清空范围后会短暂经过这里，那时 customRange 已经是 null）
+      $('list').innerHTML = customCalGrid(visible, rangeForCustom())
+      // 刚选完范围：这一段最早的几天要摆在眼前（为什么、以及为什么不无脑重置，见 freshCalTop）
+      if (freshCalTop) { freshCalTop = false; $('list').scrollTop = 0 }
+    }
     restoreScroll()
     restoreTitleEdit()
     return
@@ -623,6 +807,20 @@ function render() {
 }
 
 /**
+ * 进「日历视图（自定义）」时摆哪一屏。**选过范围就摆那段日历，没选过才进"拖选"那一屏。**
+ *
+ * 为什么不用"每次切进来都进拖选屏"：范围一离开这一屏就"看着没了" —— 范围明明还在
+ * （ui.json 里一直躺着），回来看到的却是空的拖选屏，只能重拖一遍，和这一屏的提示语
+ * （"选完就是这一屏的日历，下次打开还是这几天"）也自相矛盾。
+ *
+ * selLabel 在进拖选屏时由 enterPickScreen 摆到今天；铺格子那条路用不上它。
+ */
+function enterCustomCal() {
+  if (customRange) pickingDays = false
+  else enterPickScreen()
+}
+
+/**
  * 切视图。除换列表内容，还要把窗口大小在"哪一屏"之间换一下：日历视图和其余视图
  * 各记各的尺寸，切回去就是上次拖好的样子。主进程负责存取（见 window:switch）——
  * 先把当前大小记到离开的那一屏，再套上要进的那一屏的。同一个分组之间切就不折腾窗口。
@@ -636,6 +834,8 @@ function setView(next: ViewId) {
   // 详情栏收没收起是**按视图分组**记的：切到日历就把这一屏上次的样子换回来，
   // 切回普通列表也换回普通列表那份。分组没变（今天 → 最近 7 天之间切）就不动它
   if (from !== to) { detailCollapsed = detailBySlot[to]; applyPanes() }
+  if (next === CAL_CUSTOM) enterCustomCal()
+  else resetPicking()
   render()
   void kapi['ui:setView'](next)
   if (from !== to) void kapi['window:switch'](to)
@@ -675,9 +875,9 @@ function row(t: Task, doneList = false): string {
   </div>`
 }
 
-/** 日历视图整块：days + 1 格按天平铺，逾期占第一格 */
-function calendarGrid(list: Task[], days: number): string {
-  return calendarCells(list, days).map(c =>
+/** 日历视图整块：格子按 --cal-cols 铺开。7d / 14d 的第一格是"已逾期"，自定义没有那格 */
+function calendarGrid(cells: CalCell[]): string {
+  return cells.map(c =>
     // data-day：拖动改期时的落点靠它认。逾期那格是 'overdue'，只能当起手、不能当落点
     `<section class="calcell${c.overdue ? ' overdue' : ''}${c.today ? ' today' : ''}" data-day="${c.key}">` +
     `<div class="calhead"><span class="dl">${esc(c.label)}</span>` +
@@ -689,6 +889,367 @@ function calendarGrid(list: Task[], days: number): string {
       : `<div class="calempty">–</div>`) +
     `</section>`).join('')
 }
+
+/* ── 日历视图（自定义）的顶栏、格子和"拖选范围"那一屏 ──
+ * 三类控件共用一个 #caltools（见 index.html），每屏只放自己那几个：
+ *   选范围那一屏：当前月份、回今天、实时天数
+ *   选完的日历：  范围文字、重选 / 清空、每行列数
+ * 用原生控件（select、button）就够，不自己画下拉 —— 那套在焦点和重画上最容易出岔子。
+ */
+
+/** 顶栏那块。范围文字和列数都在里面，切语言时会跟着重刷（render 每次都重建） */
+function calTools(): string {
+  const cols = `<label class="calcolsel"><span>${esc(S.calendarCustomLayout)}</span>` +
+    `<select id="calcols">${Array.from({ length: CUSTOM_CAL_COLS.max - CUSTOM_CAL_COLS.min + 1 },
+      (_, i) => CUSTOM_CAL_COLS.min + i).map(n =>
+      `<option value="${n}"${n === customCols ? ' selected' : ''}>${esc(S.calendarCustomCols(n))}</option>`).join('')}` +
+    `</select></label>`
+  if (pickingDays) {
+    // 拖到一半（还没松手）就实时报天数，超上限立刻说清楚，别等松手才发现被砍了。
+    // 月份跟着滚动走（selLabel），所以这里不给翻月按钮 —— 直接滚就是翻月
+    const n = sweep ? rangeDays(normRange(sweep.anchor, sweep.at)) : 0
+    const over = n > CUSTOM_CAL_MAX_DAYS
+    return `<div class="calpick">` +
+      `<span class="calmonth">${esc(monthLabel(selLabel))}</span>` +
+      `<span class="calcount${over ? ' over' : ''}">${esc(n
+        ? (over ? S.calendarCustomMax(CUSTOM_CAL_MAX_DAYS) : S.calendarCustomPicked(n))
+        : S.calendarCustomPick)}</span>` +
+      `</div>${cols}`
+  }
+  return `<div class="calpick">` +
+    `<span class="calrange">${esc(customRange
+      ? S.calendarCustomSub(absDay(customRange.from), absDay(customRange.to), customCols)
+      : S.calendarCustomNone)}</span>` +
+    `<button class="ghost" data-calpick>${esc(S.calendarCustomRedo)}</button>` +
+    (customRange ? `<button class="ghost" data-calclear>${esc(S.calendarCustomClear)}</button>` : '') +
+    `</div>${cols}`
+}
+
+/** 选完范围的日历：只有那几天，没有"已逾期"那格。范围里一条都没有时说一句白话 */
+function customCalGrid(list: Task[], range: CalRange | null): string {
+  // 没选过范围：说清楚"还没选"，别画一屏空格子让人以为坏了
+  if (!range) return `<div class="empty"><span class="big">🗓️</span>${esc(S.calendarCustomNone)}</div>`
+  return calendarGrid(customCalCells(list, range))
+}
+
+/**
+ * "拖选范围"那一屏：**一条连续的月时间轴**，一行七天（周一到周日），月初插一行月份标题。
+ *
+ * 为什么不按"一月一屏 + 翻月按钮"画：要选一段跨月、跨好几个月的范围时，
+ * 翻月是一下一下点、还得记着点到哪儿了；连续滚上去就自然多了 —— 手一直往下滑，
+ * 看到哪天划到哪天，跨几个月都不用松手（自动滚动见选范围那段）。
+ *
+ * 一次画够十年（见 buildPickSpan）：不做动态拼接，省得"补 scrollTop → 触发 scroll →
+ * 再接"那种自己喂自己的回路。
+ */
+/**
+ * 月份之间的加减一律走"相对 0 号的月序号"，**不要拿某个月的日期去 setMonth**：
+ * 月份长度不一样，`new Date(2026, 6, 31).setMonth(5)`（退到 6 月）会溢出成 7 月 1 日
+ * （6 月没有 31 号）—— 结果是"往前退一个月"原地不动。踩过：时间轴把同一个 7 月插了 15 遍。
+ */
+const monthNo = (m: number) => { const d = new Date(m); return d.getFullYear() * 12 + d.getMonth() }
+/** 一个月的 1 号（零点）就是这个月的代表 */
+const monthFirst = (ts: number) => { const d = new Date(ts); d.setDate(1); d.setHours(0, 0, 0, 0); return +d }
+const monthAt = (no: number) => +new Date(Math.floor(no / 12), ((no % 12) + 12) % 12, 1)
+/** 某个月的 1 号所在那一周的周一 */
+function monthStartWithLead(m: number): number {
+  const first = monthFirst(m)
+  const d = new Date(first)
+  d.setDate(1 - ((new Date(first).getDay() + 6) % 7))      // 周一开头（周一是 1，周日是 0）
+  return +d
+}
+/** 一个月块：一行月份标题 + 它那几周的日期格。标题吸顶（见 index.html 的 .calmon） */
+function monthBlockHtml(m: number): string {
+  const first = monthFirst(m)
+  const no = monthNo(first)
+  const cells: string[] = []
+  const d = new Date(monthStartWithLead(first))
+  while (+d < first) d.setDate(d.getDate() + 1)            // 从周一起画，跳过上个月那几天
+  while (monthNo(+d) === no) {
+    const day = dayStart(+d)
+    cells.push(`<div class="caldim" data-pickday="${day}">${esc(S.dayShort(new Date(day)))}</div>`)
+    d.setDate(d.getDate() + 1)
+  }
+  return `<div class="calmon" data-calmon="${first}">${esc(monthLabel(first))}</div>` + cells.join('')
+}
+function pickTimelineHtml(): string {
+  let out = ''
+  for (let i = 0; i < selCount; i++) out += monthBlockHtml(monthAt(selFrom + i))
+  return `<div class="calpickgrid">${out}</div><div class="calpickhint">${esc(S.calendarCustomPickHint)}</div>`
+}
+
+/**
+ * 时间轴画多长：**一次画好，不做动态拼接**。
+ *
+ * 一开始试的是"滚到边再往前接几个月"，但往前接必须给 scrollTop 补高度，而补高度又
+ * 触发 scroll 事件 → 再接 → 再补，滚成雪球（实测月份数从 18 涨到 200 多；防重入标记
+ * 也拦不住，因为事件是在标记撤掉之后才派发的）。一次画够就完全没有这个回路：
+ * 实测 121 个月、3600 多个节点，建 HTML 7ms、进 DOM 5ms，可以忽略。
+ *
+ * 上下各留 5 年：挑日期不会挑到五年前去，真滚到边上也就停住了 —— 边界是"靠山"不是"墙"。
+ * （不另给"回今天"按钮：进这一屏总是从今天那个月起看，真滚远了也是自己划远的。）
+ */
+const SPAN_BACK = 60      // 往前画几个月
+const SPAN_FWD = 60       // 往后画几个月
+/** 重建整条时间轴（进这一屏、或换了语言时）。want 那天所在的那个月摆在可视区顶上 */
+function buildPickSpan(want: number): void {
+  const base = dayStart(want)
+  selFrom = monthNo(base) - SPAN_BACK
+  selCount = SPAN_BACK + SPAN_FWD + 1
+  $('list').innerHTML = pickTimelineHtml()
+  selLabel = base
+  scrollPickToMonth(base)
+}
+/**
+ * 把某天所在的那个月摆到可视区顶上：**当前月份要从头看起，吸顶标题也就是它**。
+ * 这一天未必在正中（月份有长短，9/26 就偏下），但它一定还在可视区里。
+ *
+ * **别用 el.offsetTop 算**：这个元素的 offsetParent 不是 #list 而是更外层（滚动容器
+ * 不一定就是 offsetParent），offsetTop 里含着头栏那一段高度，减出来会偏下小半屏
+ * （实测偏 172px）。改成"拿到手的位置再拼回滚动坐标"：rect 的差就是它相对列表顶部的
+ * 位置，加回当前 scrollTop 就是这个月的绝对位置，跟 offsetParent 是谁再无关系。
+ *
+ * 减掉 .calmon 的 margin-top：那块留白留在可视区顶上会露出上个月最后一行的尾巴
+ * （月份块之间有间距），扣掉它，标题就正好贴边。
+ */
+function scrollPickToMonth(want: number): void {
+  const list = $('list')
+  const mon = list.querySelector<HTMLElement>(`[data-calmon="${monthFirst(want)}"]`)
+  if (!mon) return
+  const r = mon.getBoundingClientRect(), lr = list.getBoundingClientRect()
+  const inList = r.top - lr.top + list.scrollTop
+  list.scrollTop = inList - (parseFloat(getComputedStyle(mon).marginTop) || 0)
+}
+/** 时间轴建起来没有（切走过再回来要重建） */
+const pickBuilt = () => !!$('list').querySelector('.calpickgrid')
+/** 时间轴是用哪种语言画的：换语言要整套重建（格子里的日期写法跟着变） */
+let pickBuiltLang: Lang | null = null
+/** 刚进这一屏：下一次 render 要把时间轴整套建起来并居中 */
+let pickFresh = false
+/**
+ * 进"拖选范围"那一屏。**总是从今天所在的那个月看起**：时间轴还没建时 selLabel 就是
+ * 落点，下一次 render 见 pickFresh 会把整条建出来、并把这个月摆到可视区顶上（见
+ * scrollPickToMonth）—— 没选过范围时第一眼看到的就是当前月份，标题也一直是它；
+ * 选过范围时点「重选范围」也回到当前月份，想改的是哪几天再自己划。
+ */
+function enterPickScreen(): void {
+  pickingDays = true
+  pickFresh = true
+  sweep = null
+  selLabel = today()
+}
+
+/* ── 滚动：拖选时的自动滚动 + 顶栏月份跟着走 ──
+ * 时间轴是一次画好的（见 buildPickSpan），这里只管两件事：
+ * 光标贴边时自己滚，以及让顶栏那个月份跟着可视区第一个月走。
+ */
+/** 拖到列表上下边缘就自己滚：选跨好几个月的范围时不用松手（和拖任务那套一个思路） */
+const PICK_SCROLL_EDGE = 80
+const PICK_SCROLL_STEP = 24
+let pickTimer: ReturnType<typeof setInterval> | null = null
+/** 光标最后压在哪儿。跟着滚的时候内容在动，得拿它重新算"光标底下是哪天" */
+let lastPickPointer = { x: 0, y: 0 }
+function startPickAutoScroll(): void {
+  if (pickTimer !== null) return
+  pickTimer = setInterval(() => {
+    const list = $('list')
+    const r = list.getBoundingClientRect()
+    const step = lastPickPointer.y < r.top + PICK_SCROLL_EDGE ? -PICK_SCROLL_STEP
+      : lastPickPointer.y > r.bottom - PICK_SCROLL_EDGE ? PICK_SCROLL_STEP : 0
+    if (!step) return
+    const was = list.scrollTop
+    list.scrollTop += step
+    if (list.scrollTop === was) return          // 滚不动了（到顶/到底）就别空转
+    onPickScroll()
+    scrollSweepStep()                            // 内容动了，光标底下可能换了另一天
+  }, 40)
+}
+function stopPickAutoScroll(): void {
+  if (pickTimer === null) return
+  clearInterval(pickTimer)
+  pickTimer = null
+}
+
+/** 滚一下：把顶栏那个月份换成可视区第一个月 */
+function onPickScroll(): void {
+  const list = $('list')
+  if (!list.querySelector('.calpickgrid')) return
+  // 可视区顶部压着哪个月：和吸顶标题看到的是同一个。标题按顺序排，
+  // 第一个"还没滚到顶"的就是当前月（用相对列表的位置比，别用 offsetTop ——
+  // offsetParent 不一定是 #list）
+  const lr = list.getBoundingClientRect()
+  const tops = list.querySelectorAll<HTMLElement>('.calmon')
+  let cur: number | null = null
+  for (let i = 0; i < tops.length; i++) {
+    const el = tops[i]!
+    if (el.getBoundingClientRect().top - lr.top <= 8) cur = Number(el.dataset['calmon'])
+    else break
+  }
+  const month = cur ?? monthAt(selFrom)
+  if (month === selLabel) return
+  selLabel = month
+  // 只换那一行字 —— 整块重画的话，滚动中光标底下的 DOM 会被换掉
+  const box = document.querySelector<HTMLElement>('#caltools .calmonth')
+  if (box) box.textContent = monthLabel(month)
+}
+
+/** 顶栏上那个月份：中文 2026年9月，英文 September 2026 */
+const monthLabel = (ts: number) => lang === 'en'
+  ? new Date(ts).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  : `${new Date(ts).getFullYear()}年${new Date(ts).getMonth() + 1}月`
+
+/**
+ * 光标底下是哪个"日期格子"。和拖任务那套的 nearestCell 一个思路：格子之间那道缝
+ * （gap 不在盒子里）按纵向就近认格，不然光标从一行划到下一行会闪一下"没选中"。
+ *
+ * **先看光标在不在列表里**：不在就一律不算（返回 null）。这一条是必须的，不是保险 ——
+ * "就近认格"那个 30px 兜底会把手伸到列表外面去：侧边栏那几行离第一行格子不远，
+ * 点「最近 30 天」会被认成"选了那一天"。而 startDaySweep 一 preventDefault，浏览器
+ * 就把这一按的后续 mousedown / click 整个吞掉（实测第一次点击连 click 事件都没有），
+ * 侧栏那一下于是完全不生效 —— 表现就是"未选范围时切别的视图要点两次"。
+ * （列表内的格子永远不会跑到列表外，所以只判这一点就够，命中判断本身不动。）
+ */
+function dayPickAt(x: number, y: number): number | null {
+  const list = $('list')
+  const lr = list.getBoundingClientRect()
+  if (x < lr.left || x > lr.right || y < lr.top || y > lr.bottom) return null
+  const el = document.elementFromPoint(x, y) as HTMLElement | null
+  const hit = el?.closest<HTMLElement>('[data-pickday]')?.dataset['pickday']
+  if (hit !== undefined) return Number(hit)
+  let best: HTMLElement | null = null, bestD = Infinity
+  list.querySelectorAll<HTMLElement>('[data-pickday]').forEach(c => {
+    const r = c.getBoundingClientRect()
+    const d = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
+    if (d < bestD) { bestD = d; best = c }
+  })
+  return best && bestD <= 30 ? Number((best as HTMLElement).dataset['pickday']) : null
+}
+
+/**
+ * 顺着一整条格子找"value 落在哪一格"，用的是二分 —— 时间轴上有几千格，
+ * 每次划动都从头扫一遍太浪费（划一下就要跑一次）。返回第一个 ≥ value 的下标。
+ */
+function lowerBound(cells: HTMLElement[], value: number): number {
+  let lo = 0, hi = cells.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (Number(cells[mid]!.dataset['pickday']) < value) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+/** 拖选时高亮：按下那天到光标那天之间全亮起来，用户能看清自己选了多长一段 */
+function markSweep() {
+  const cells = Array.from(document.querySelectorAll<HTMLElement>('#list [data-pickday]'))
+  const r = sweep ? normRange(sweep.anchor, sweep.at) : null
+  const from = r ? lowerBound(cells, r.from) : 0
+  const to = r ? lowerBound(cells, r.to + 1) : 0        // 半开区间：第一个"超过末日"的位置
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i]!
+    c.classList.toggle('sweep', i >= from && i < to)
+    if (sweep && Number(c.dataset['pickday']) === sweep.anchor) c.classList.add('anchor')
+    else c.classList.remove('anchor')
+  }
+  // 顶栏那行天数跟着走（超上限那句也在这儿换）
+  const n = r ? rangeDays(r) : 0
+  const box = document.querySelector<HTMLElement>('#caltools .calcount')
+  if (!box) return
+  const over = n > CUSTOM_CAL_MAX_DAYS
+  box.classList.toggle('over', over)
+  box.textContent = n
+    ? (over ? S.calendarCustomMax(CUSTOM_CAL_MAX_DAYS) : S.calendarCustomPicked(n))
+    : S.calendarCustomPick
+}
+
+/** 按下：起手那天就是范围的一头。真正的"选了几天"等松手才算 */
+function startDaySweep(e: PointerEvent): void {
+  const day = dayPickAt(e.clientX, e.clientY)
+  if (day === null) return
+  e.preventDefault()                    // 别让浏览器顺手开始选字
+  sweep = { anchor: day, at: day }
+  // 贴着上下边划就自己滚：想选几个月以外的那几天时不用松手去滚（和拖任务那套一个思路）
+  lastPickPointer = { x: e.clientX, y: e.clientY }
+  startPickAutoScroll()
+  markSweep()
+}
+
+/**
+ * 划动：另一头跟着光标走。没起手（不在这条链上）就什么都不做 ——
+ * 所以拖任务、点别处都不会被它碰上。
+ *
+ * 这里就把 36 天卡住（而不是等松手才砍）：拉过头时高亮当场停在 36 天上、顶栏同时
+ * 说清楚"最多 36 天"，用户立刻知道到头了，不用先划出去再看着它被砍回来。
+ */
+function moveDaySweep(e: PointerEvent): void {
+  if (!sweep) return
+  lastPickPointer = { x: e.clientX, y: e.clientY }
+  const day = dayPickAt(e.clientX, e.clientY)
+  if (day === null || day === sweep.at) return      // 还在同一天上，不用重画
+  sweep.at = day                                    // 记的是光标那天（见上面那段注释）
+  markSweep()
+}
+/** 跟着光标滚：把 sweep.at 再算一遍（内容动了，光标底下换了另一天） */
+function scrollSweepStep(): void {
+  if (!sweep) return
+  const day = dayPickAt(lastPickPointer.x, lastPickPointer.y)
+  if (day === null || day === sweep.at) return
+  sweep.at = day
+  markSweep()
+}
+
+document.addEventListener('pointerup', () => {
+  if (!sweep) return
+  const r = clampRange(normRange(sweep.anchor, sweep.at))
+  sweep = null
+  stopPickAutoScroll()
+  // 松手就生效，不用再点一次"确定"：选范围这个动作本身没有歧义，
+  // 选错了顶栏一直摆着「重选范围」，改起来也就一下
+  pickingDays = false
+  freshCalTop = true        // 这一次铺出来的日历要从第一行看起（见 freshCalTop）
+  void saveCustomRange(r)
+  render()
+})
+// 指针在窗口外松手收不到 pointerup，痕迹得自己清（和拖任务那套一样）
+window.addEventListener('blur', () => {
+  stopPickAutoScroll()
+  if (sweep) { sweep = null; markSweep() }
+})
+
+/**
+ * 存下这段范围。**范围当场生效，落盘异步跟上**：主进程那边只是把它写进 ui.json，
+ * 结果由本进程决定，没必要等一次往返 —— 等了就会先画一遍旧的（松手后看着像没反应）。
+ * 主进程为了防脏值可能再夹一次，它返回的才是准的，所以回来还要对一下。
+ *
+ * 每改一次范围就记一笔版本号，**回来时对不上就说明这一笔已经过期**（用户又选了新范围、
+ * 或者刚清空过），直接扔掉。没有这道守卫，清空之后前一次拖选的回应才慢悠悠回来，
+ * 会把刚清掉的范围又写回界面上 —— 看着就是"清空没生效"。
+ */
+let rangeSeq = 0
+async function saveCustomRange(r: CalRange | null) {
+  const seq = ++rangeSeq
+  customRange = r
+  // 范围落定，拖选屏的落点也跟着校正到新范围的起点（踩过：重选时停在 9 月，
+  // 而范围其实是 10 月）。进拖选屏时 enterPickScreen 还会再把它摆到今天 ——
+  // 这一句管的是留在这一屏、时间轴不重建的那种情况
+  if (r) selLabel = dayStart(r.from)
+  const saved = await kapi['ui:setCustomCalRange'](r)
+  if (seq !== rangeSeq) return
+  // 夹过就说一声（正常情况下一样，这里只是不让两边悄悄分叉）
+  if (saved && (saved.from !== customRange?.from || saved.to !== customRange?.to)) {
+    customRange = saved
+    selLabel = dayStart(saved.from)
+    freshCalTop = true      // 夹过就是换了一段范围，同样要从第一行看起
+    render()
+  }
+}
+
+/** 切走（或者又切回来）时把没完成的拖选清掉：那一笔本来也没生效 */
+function resetPicking() {
+  pickingDays = false
+  sweep = null
+  document.querySelectorAll('#list .sweep').forEach(c => c.classList.remove('sweep'))
+}
+
 
 /**
  * 日历视图里的任务行。格子只有一百来像素宽，所以时间、重复标签挪到标题下面一行，
@@ -802,6 +1363,12 @@ function applyDetailW() {
   document.documentElement.style.setProperty('--detail-w', `${clampDetailW(detailW)}px`)
 }
 
+/**
+ * 选范围那一屏的滚动：滚到边上就接月份（见 onPickScroll），
+ * 顺便把顶栏那个月份换成可视区第一个月。
+ */
+$('list').addEventListener('scroll', () => { if (pickingDays) onPickScroll() })
+
 const resizeBar = $('dresize')
 /** 拖动起点：鼠标 x、当时详情栏**显示**的宽度、以及拖之前的逻辑宽度 */
 let resizeFrom: { x: number; w: number; w0: number } | null = null
@@ -883,6 +1450,9 @@ document.addEventListener('mousedown', (e) => {
   actedOnMousedown = false
   whenBusy = false
   const target = e.target as HTMLElement
+  // 自定义日历的"选范围"那一屏：格子就是日期本身，没有任务可点。
+  // 拖选从 pointerdown 起手，这里把后面那些"按到任务/标题"的分支整个让开
+  if (target.closest('#caltools') || target.closest('[data-pickday]')) return
   if (target.closest('#dmeta')) whenBusy = true
   const btn = target.closest<HTMLElement>('[data-act]')
   if (btn) {
@@ -1116,6 +1686,9 @@ document.addEventListener('pointerdown', (e) => {
   endCalDrag()                 // 上一次没收尾（指针在窗口外松手），先清干净
   if (e.button !== 0) return
   const target = e.target as HTMLElement
+  // 自定义日历"选范围"那一屏：这一按就是选范围的起手（按下那天是范围的一头）。
+  // 必须在这里起手，不能等 pointermove —— 只点一下不拖也是一次合法的"选 1 天"
+  startDaySweep(e)
   const row = target.closest<HTMLElement>('[data-task]')
   if (!row || target.closest('[data-act]')) return      // 圆圈还是走勾选那条路
   // 只有"某一天"里的行能拖（逾期和未安排那两组没有 data-day）。落点可以是别的天，
@@ -1126,6 +1699,9 @@ document.addEventListener('pointerdown', (e) => {
 })
 
 document.addEventListener('pointermove', (e) => {
+  // 选范围那一屏：划动时另一头跟着光标走。先于下面那段 —— 那里是"拖任务"的，
+  // 两者不会同时成立（一个按在任务行上，一个按在日期格上），但谁先谁后要定死
+  moveDaySweep(e)
   const d = calDrag
   if (!d) return
   lastPointer = { x: e.clientX, y: e.clientY }
@@ -1273,6 +1849,34 @@ document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
   if (nav) { setView(nav.dataset['view'] as ViewId); return }
+  /**
+   * 自定义日历顶栏那几枚按钮：
+   *   重选范围  回到"拖选"那一屏
+   *   清空范围  把选过的范围丢掉（范围在 pick 里用，清掉就是回到没选过的样子）
+   * 都只用一次点击，不需要悬停提示以外的东西；按钮上本来就有文字或 aria-label。
+   */
+  // 回到选范围那一屏：从当前月份看起（落点见 enterPickScreen / scrollPickToMonth）
+  if (target.closest('[data-calpick]')) {
+    enterPickScreen()
+    render()
+    return
+  }
+  if (target.closest('[data-calclear]')) {
+    /**
+     * 清空之后回到"还没选过"：直接进拖选屏，让用户自己挑一段。
+     * 走 saveCustomRange(null) 而不是直接发 IPC —— 它会记版本号，
+     * 把前一次拖选那笔过期的回应作废（不然刚清掉的范围会被写回来）。
+     *
+     * 注意别在这儿立刻塞默认 7 天：用户点"清空"就是想重新挑，塞一段默认值等于没清；
+     * 真没选范围就切走的话，这一屏按 defaultCustomRange() 那 7 天画（只是显示用，
+     * 不会写进 ui.json，见 rangeForCustom）。
+     */
+    enterPickScreen()
+    void saveCustomRange(null)
+    render()
+    return
+  }
+  // 列数那个 <select> 由下面的 change 处理：这里只把它让开，别当成任务行去处理
   if (target.id === 'dclear' && selected) {
     // 走和"手动把时间框清空"完全同一条路：日期不动，任务变成全天
     ;($('dtime') as HTMLInputElement).value = ''
@@ -1619,6 +2223,11 @@ document.addEventListener('change', (e) => {
     renderNewCustom(null)
   }
   if (el.id === 'newDate') syncNewRepeat()      // 换了日期，预设跟着变
+  // 自定义日历的列数。存下去之后要重画：--cal-cols 由 render() 写进 #list
+  if (el.id === 'calcols') {
+    const n = Number((el as HTMLSelectElement).value)
+    void kapi['ui:setCustomCalCols'](n).then(saved => { customCols = saved; render() })
+  }
 })
 
 /* ── 日志 ── */
@@ -1790,6 +2399,11 @@ async function boot() {
   sideCollapsed = await kapi['ui:sidebarCollapsed']()
   // 日历的「显示已完成」开关也得在第一次 render 之前拿到，否则会先按默认关画一遍
   showDone = await kapi['ui:showDone']()
+  // 自定义日历的范围和列数：同样是第一次 render 就要用的（选过范围就直接铺格子）。
+  // 没选过范围的话，落在这一屏时先进"拖选"那个状态
+  const customCal = await kapi['ui:customCal']()
+  customRange = customCal.range
+  customCols = customCal.cols
   /**
    * 落在上次那一屏列表上（主进程建窗口时已经按同一屏给了尺寸）。浏览器的滚动位置
    * 没法跨启动保留，列表长了会回到顶部 —— 能记住的只有"哪一屏"。
@@ -1797,6 +2411,7 @@ async function boot() {
    */
   const lastView = await kapi['ui:view']()
   if (lastView && VIEWS.some(v => v.id === lastView)) view = lastView
+  if (view === CAL_CUSTOM) enterCustomCal()
   /**
    * 详情栏收没收起按视图分组记，所以三份都先拿回来（切视图时不再问主进程，见 setView），
    * 再把当前这一屏那份装上。必须在 setLang 之前 —— applyStatic 会调 applyPanes。

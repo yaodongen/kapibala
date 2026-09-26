@@ -65,6 +65,21 @@ const ZH = {
   showDoneOn: '显示当天已完成的任务',
   showDoneOff: '不显示已完成的任务',
   /**
+   * 日历视图（自定义）的范围和列数。范围是用户拖出来的，副标题跟着显示，
+   * 所以是函数而不是写死的一句
+   */
+  calendarCustom: '日历视图（自定义）',
+  calendarCustomSub: (from: string, to: string, cols: number) => `${from} – ${to}，${cols} 列`,
+  calendarCustomNone: '还没有选日期范围',
+  calendarCustomPick: '拖选要看的日期范围',
+  calendarCustomPickHint: '用鼠标划过去选起止两天。选完就是这一屏的日历，下次打开还是这几天。',
+  calendarCustomPicked: (n: number) => `已选 ${n} 天`,
+  calendarCustomMax: (n: number) => `最多 ${n} 天，已经卡住了`,
+  calendarCustomCols: (n: number) => `${n} 列`,
+  calendarCustomLayout: '每行放几列',
+  calendarCustomRedo: '重选范围',
+  calendarCustomClear: '清空范围',
+  /**
    * 收起/展开两侧栏的按钮提示。和主题开关一样写"点了会变成什么"：
    * 侧边栏那枚长在侧边栏里（收起后整块都不在了），展开那枚长在主区标题行最前面
    */
@@ -112,6 +127,12 @@ const ZH = {
   dayYesterday: '昨天',
   /** 日期分组的标题：8月26日 */
   dayLabel: (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`,
+  /**
+   * 拖选时间轴里格子上那个日期：**数字写法**。
+   * 那一屏一行七格、格子只有五六十像素宽，"10月10日"这种写法会折成两行；
+   * 数字写法更短，而且和左边那列"月/日"的顺序读起来一致
+   */
+  dayShort: (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`,
   weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
   emptyTrash: '垃圾桶是空的',
   purgeAll: '清空垃圾桶',
@@ -215,6 +236,17 @@ const EN: typeof ZH = {
   themeToLight: 'Switch to light mode',
   showDoneOn: 'Show tasks completed that day',
   showDoneOff: 'Hide completed tasks',
+  calendarCustom: 'Calendar (custom)',
+  calendarCustomSub: (from, to, cols) => `${from} – ${to}, ${cols} columns`,
+  calendarCustomNone: 'No date range yet',
+  calendarCustomPick: 'Drag to pick the days you want',
+  calendarCustomPickHint: 'Drag across the days to set the first and the last one. From then on this view is that calendar, and it stays after a restart.',
+  calendarCustomPicked: (n) => `${n} day${n === 1 ? '' : 's'} selected`,
+  calendarCustomMax: (n) => `${n} days max, that is the whole span`,
+  calendarCustomCols: (n) => `${n} columns`,
+  calendarCustomLayout: 'Columns per row',
+  calendarCustomRedo: 'Pick a new range',
+  calendarCustomClear: 'Clear the range',
   sidebarCollapseTip: 'Hide the sidebar and focus on the tasks',
   sidebarExpandTip: 'Show the sidebar',
   detailCollapseTip: 'Hide the detail pane and focus on the tasks',
@@ -251,6 +283,7 @@ const EN: typeof ZH = {
   dayTomorrow: 'Tomorrow',
   dayYesterday: 'Yesterday',
   dayLabel: (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+  dayShort: (d) => `${d.getMonth() + 1}/${d.getDate()}`,
   weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
   emptyTrash: 'The trash is empty',
   purgeAll: 'Empty trash',

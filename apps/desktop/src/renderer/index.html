@@ -138,6 +138,42 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
    "点一下列表自己往上跑"。滚动位置改由 app.ts 的 keepScroll() 自己钉 */
 .list{flex:1; overflow-y:auto; padding:0 28px 40px; overflow-anchor:none}
 
+/* ── 自定义日历的顶栏 ──
+   长在列表**外面**（#list 上面），跟着窗口宽度走，不跟着列表滚。
+   它只在自定义日历这一屏有内容，别的视图整块 hidden（见 app.ts 的 render） */
+#caltools{ display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+           padding:0 20px 8px; font-size:12.5px; color:var(--dim) }
+#caltools[hidden]{ display:none }
+#caltools .calpick{ display:flex; align-items:center; gap:8px; min-width:0 }
+#caltools .calmonth{ font-weight:600; color:var(--text); min-width:72px }
+#caltools .calrange{ color:var(--text) }
+/* 选到一半的那行天数：超了 36 天当场变红，别等松手才发现被砍掉 */
+#caltools .calcount.over{ color:var(--danger) }
+#caltools .ghost{ padding:3px 9px }
+#caltools .calcolsel{ display:flex; align-items:center; gap:6px; margin-left:auto }
+#caltools select{ padding:3px 6px; border:1px solid var(--border); border-radius:6px;
+                  background:var(--bg); color:var(--text); font-size:12.5px }
+/* ── 选范围那一屏：一条连续的月时间轴 ──
+   一行七天（周一到周日），月初插一行月份标题（.calmon，滚上去吸顶）。
+   格子保持 46px 矮格：一屏能看两周多，滚起来才顺；要选几个月以外的那几天就贴着
+   边缘划，自动滚动会接手（见 app.ts 的 startPickAutoScroll） */
+.list.calpicking{ display:block; overflow:auto; padding:0 }
+.calpickgrid{ display:grid; grid-template-columns:repeat(7, minmax(0, 1fr));
+              gap:2px 6px; align-content:start; padding:0 20px 40px; user-select:none }
+/* 月份标题：横跨七列，滚到顶就吸住 —— 一路往下滑也不会不知道自己滑到几月了。
+   pointer-events:none 是必须的：它是覆盖层，吸住的时候正压着下面那一整行日期，
+   不关掉的话点那一行会被它接走（点上去毫无反应） */
+.calmon{ grid-column:1 / -1; position:sticky; top:0; z-index:2; pointer-events:none;
+         padding:12px 2px 6px; margin-top:6px;
+         background:var(--bg); font-size:12.5px; font-weight:600; color:var(--text) }
+.caldim{ display:flex; align-items:flex-start; padding:5px 7px; border-radius:8px;
+         border:1px solid transparent; background:var(--sidebar); font-size:12px;
+         color:var(--dim); font-variant-numeric:tabular-nums; min-height:46px;
+         white-space:nowrap; overflow:hidden }
+.caldim.sweep{ background:var(--accent-soft); color:var(--text); border-color:var(--accent) }
+.caldim.anchor{ border-color:var(--accent); color:var(--text) }
+.calpickhint{ padding:0 20px 40px; color:var(--dim); font-size:12.5px }
+
 /* ── 日历视图：按天铺成格子，列数由 app.ts 写进 --cal-cols ──
    7d 是 4 列 × 2 行（逾期 + 7 天 = 8 格），14d 是 5 列 × 3 行（15 格）。
    第一格固定是已逾期，其余按天排。格子跟着列表区宽度平分，列总是并排 ——
@@ -607,6 +643,9 @@ html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
       <!-- 选了"自定义天数…"才有内容 -->
       <span id="newcustom"></span>
     </div>
+    <!-- 自定义日历的顶栏（范围、列数、翻月）。长在列表**上面**（不跟着列表滚），
+         别的视图这里是空的（见 app.ts 的 render） -->
+    <div id="caltools" hidden></div>
     <div class="list" id="list"></div>
   </main>
 

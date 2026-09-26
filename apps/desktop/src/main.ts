@@ -4,8 +4,10 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, platformOf, viewSlot, PLATFORM_ARG,
-         type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
+import { DEFAULT_DETAIL_WIDTH, CUSTOM_CAL_COLS, isRestorableView, isViewId, isWinSlot,
+         LEGACY_SLOT_KEYS, normCalRange, platformOf, readCalRange, viewSlot, PLATFORM_ARG,
+         type CalRange, type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState, type ViewId,
+         type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
 
@@ -48,6 +50,12 @@ type UiState = {
   detailWidth?: number
   /** 日历视图是否显示"当天已完成"的任务。没存过 = 关 */
   showDone?: boolean
+  /**
+   * 日历视图（自定义）选的那段日期和列数。没存过 = 还没选过范围（界面进"拖选"那一屏）。
+   * 范围存的是那两天的零点，和"今天"无关 —— 下次打开看到的就是当初选的那几天
+   */
+  customCalRange?: CalRange
+  customCalCols?: number
   /** 左右两侧栏收起没有。没存过 = 都不收（完整三栏） */
   sidebarCollapsed?: boolean
   /**
@@ -58,7 +66,11 @@ type UiState = {
   detailCollapsed?: boolean
   /** 上次停在哪个列表，打开就回到那一屏。已完成 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
   view?: ViewId
-  /** 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot */
+  /**
+   * 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot。
+   * 日历那三屏合成 'calendar' 之前，盘上可能还留着 calendar7 / calendar14 两个旧键，
+   * 读的时候按 LEGACY_SLOT_KEYS 折算（见 slotKey），写只写新键
+   */
   winSize?: Partial<Record<WinSlot, [number, number]>>
 }
 function readUi(): UiState {
@@ -67,10 +79,20 @@ function readUi(): UiState {
 function writeUi(ui: UiState) {
   try { writeFileSync(uiFile(), JSON.stringify(ui, null, 2) + '\n') } catch (e) { log('error', '写界面状态失败', e) }
 }
+/**
+ * 自定义日历的列数：不是 3~6 的整数（没存过、手改过、旧版本写的）就用默认 5。
+ * 夹而不报错 —— 列数只是个摆法，没必要为它把界面卡住。
+ */
+function normCalCols(x: unknown): number {
+  const n = Math.round(Number(x))
+  if (!Number.isFinite(n) || n < CUSTOM_CAL_COLS.min || n > CUSTOM_CAL_COLS.max) return CUSTOM_CAL_COLS.def
+  return n
+}
 
 /* ── 窗口大小：按视图分组记 ──
- * 日历铺的是格子，要的地方和列表不一样，所以 7d / 14d 各记一套，其余视图共用一份。
- * 切视图时主进程负责"先存旧的、再套新的"，用户手动拖的窗口大小按当前那一屏落盘。
+ * 日历铺的是格子，要的地方和列表不一样，所以三个日历视图共用 'calendar' 一份，
+ * 其余视图共用 'other'。切视图时主进程负责"先存旧的、再套新的"，用户手动拖的窗口
+ * 大小按当前那一屏落盘。三个日历之间不换尺寸 —— 它们都是铺格子，用同一套。
  */
 /** 窗口的最小尺寸，和建窗口时的 minWidth/minHeight 是一个数 */
 const MIN_W = 820, MIN_H = 420
@@ -79,6 +101,15 @@ const DEFAULT_W = 1110, DEFAULT_H = 640
 /** 当前窗口大小算哪一屏的。切视图时更新，窗口被拖动时按它落盘 */
 let winSlot: WinSlot = 'other'
 let winSaveTimer: NodeJS.Timeout | null = null
+
+/**
+ * 分组改过名（日历那三屏合成了 'calendar'）之后，读偏好时的落实办法：
+ * **新键没有就退回旧键**。老用户的 ui.json 里躺着 calendar7 / calendar14
+ * 那两套，不认它们就等于把用户调好的窗口大小和详情栏开合全扔了。
+ * 旧键只读、不删也不改：留着不碍事，之后所有的写都只写新键。
+ */
+const slotKey = <T>(old: Partial<Record<string, T>> | undefined, slot: WinSlot): T | undefined =>
+  old?.[slot] ?? LEGACY_SLOT_KEYS[slot]?.map(k => old?.[k]).find(v => v !== undefined)
 
 /** 把尺寸夹进"最小尺寸 ~ 当前屏幕可用区域"：记下来的值可能来自更大的屏幕 */
 function fitToScreen(w: number, h: number, bounds?: Electron.Rectangle): [number, number] {
@@ -103,7 +134,7 @@ function switchWinSlot(to: WinSlot): [number, number] | null {
   if (winSaveTimer) { clearTimeout(winSaveTimer); winSaveTimer = null }
   rememberWinSize()
   winSlot = to
-  const saved = readUi().winSize?.[to]
+  const saved = slotKey(readUi().winSize, to)
   if (!saved || !win || win.isDestroyed()) return null
   const b = win.getBounds()
   const area = screen.getDisplayMatching(b).workArea
@@ -432,6 +463,39 @@ handle('ui:setShowDone', (on: boolean) => {
   return on
 })
 
+/**
+ * 日历视图（自定义）的范围和列数。两个值一起给：界面第一屏就要同时用到
+ * （有范围才铺格子，铺几列由列数定）。
+ *
+ * 读回来的范围一律过一遍 readCalRange —— ui.json 是纯文本，可能被手改成任何东西，
+ * 超过 36 天的也当没选过（那不是拖出来的，是盘上躺着的怪值）。
+ */
+handle('ui:customCal', () => {
+  const ui = readUi()
+  return { range: readCalRange(ui.customCalRange), cols: normCalCols(ui.customCalCols) }
+})
+/** 记下拖出来的范围。null = 清掉重选（那个字段直接删掉，不留 undefined） */
+handle('ui:setCustomCalRange', (range: CalRange | null) => {
+  const ui = readUi()
+  if (range === null) {
+    delete ui.customCalRange
+    writeUi(ui)
+    return null
+  }
+  // normCalRange 会顺手把超 36 天的夹回来（超一点是拖动过程，不是错误）。
+  // 只有形状根本不对（不是两个数字）才当非法 —— 那说明调用方出了问题
+  const norm = normCalRange(range)
+  if (!norm) throw new Error(`不认识的日期范围：${JSON.stringify(range)}`)
+  writeUi({ ...readUi(), customCalRange: norm })
+  return norm
+})
+handle('ui:setCustomCalCols', (cols: number) => {
+  const n = normCalCols(cols)
+  if (!Number.isFinite(Number(cols))) throw new Error(`不认识的列数：${String(cols)}`)
+  writeUi({ ...readUi(), customCalCols: n })
+  return n
+})
+
 // 两侧栏收起没有。和上面的 showDone 一样是布尔本机偏好，形状照抄，只是键不同。
 // 收起状态不影响库里的任何东西，纯界面：下次打开还是这个样子
 handle('ui:sidebarCollapsed', () => readUi().sidebarCollapsed === true)
@@ -441,14 +505,15 @@ handle('ui:setSidebarCollapsed', (on: boolean) => {
   return on
 })
 /**
- * 详情栏收起没有。按视图分组各记一份（其余视图 / 日历 7d / 日历 14d，和 winSize 同粒度）——
+ * 详情栏收起没有。按视图分组各记一份（其余视图 / 日历，和 winSize 同粒度）——
  * 在日历里把详情栏收起来铺满格子，切回别的列表逛一圈再回来，它还是收着的。
+ * 三个日历视图共用日历那一份：都是铺格子看安排，进来就该是同一个样子。
  * 1.9.x 只存过一个全局布尔，读不到分组值时拿它兜底，老用户的习惯不会凭空变。
  */
 handle('ui:detailCollapsed', (slot: WinSlot) => {
   if (!isWinSlot(slot)) throw new Error(`不认识的视图分组：${String(slot)}`)
   const ui = readUi()
-  return ui.detailCollapsedBySlot?.[slot] ?? ui.detailCollapsed === true
+  return slotKey(ui.detailCollapsedBySlot, slot) ?? ui.detailCollapsed === true
 })
 handle('ui:setDetailCollapsed', (slot: WinSlot, on: boolean) => {
   if (!isWinSlot(slot)) throw new Error(`不认识的视图分组：${String(slot)}`)
@@ -547,7 +612,7 @@ function createWindow() {
   // 没记过或者记的是已完成 / 垃圾桶，就还是"其余视图"那套尺寸
   const start = readUi().view
   winSlot = isRestorableView(start) ? viewSlot(start) : 'other'
-  const saved = readUi().winSize?.[winSlot]
+  const saved = slotKey(readUi().winSize, winSlot)
   const [w, h] = saved ? fitToScreen(saved[0], saved[1]) : [DEFAULT_W, DEFAULT_H]
   const opts: Electron.BrowserWindowConstructorOptions = {
     width: w, height: h, minWidth: MIN_W, minHeight: MIN_H,
