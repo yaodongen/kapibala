@@ -1694,6 +1694,12 @@ document.addEventListener('pointerdown', (e) => {
   // 只有"某一天"里的行能拖（逾期和未安排那两组没有 data-day）。落点可以是别的天，
   // 所以这里看的是**起手那一行**在哪
   if (!row.closest<HTMLElement>('[data-day]')?.dataset['day']) return
+  // 日历格子里正在就地改标题的那一行不给拖：标题已经变成输入框，这时按住划一下
+  // 多半是想选字，拖走会把打了一半的标题连任务一起甩到别的天去。
+  // 要改期先退出编辑（回车 / esc / 点别处）。列表那边照旧 —— 真拖起来就把编辑框
+  // 收掉（见下面 pointermove），那条路能拖是因为列表的标题在 mousedown 就进编辑态，
+  // 不起手拖就等于没有"拖上一整行"这个手势了
+  if (row.closest('.calcell') && titleEditing === row.dataset['task']) return
   calDrag = { id: row.dataset['task']!, kind: row.closest('.calcell') ? 'cal' : 'list',
               x: e.clientX, y: e.clientY, title: !!target.closest('.title'), on: false, drop: null }
 })

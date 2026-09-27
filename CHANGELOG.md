@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.1 — 2026-09-27
+
+- In the calendar views, the row you are renaming no longer drags: while its title is an input, pressing and moving inside it just selects text, so a half-typed title and the task both stay where they are. Leave the edit (Enter, Esc or a click elsewhere) and the row drags again; dragging rows in the list is unchanged.
+- 日历视图里正在就地改标题的那一行不给拖了：标题变成输入框时，按住划一下只是选字，打了一半的标题和这条任务都留在原地；退出编辑（回车 / esc / 点别处）之后又能拖。列表里的拖动照旧。
+
 ## 1.11.0 — 2026-09-26
 
 - A third calendar view, Calendar (custom), where you drag across the days to pick the span you want — up to 36 days, laid out three to six to a row — and it stays picked: the range is stored as real dates in `ui.json`, so the next time you open the app, or come back from another list, it is still that calendar, with the earliest day of the range on the first row. The sidebar entry shows the span underneath it, and the toolbar can pick a new range, clear it, or change the columns per row. The three calendar views now share one set of preferences: window size and whether the detail pane is collapsed are the same in 7d, 14d and custom. The range picker opens on the current month, and its Back to today button is gone.
