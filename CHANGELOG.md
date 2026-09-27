@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.4 — 2026-09-27
+
+- Automatic date detection is now held to a window of this year through ten years out (2026–2036). Anything outside it is left unscheduled, because out-of-range dates are almost always an order number, an amount, or a mistyped year: `991231`, `000630` and `20990630` no longer become dates, and neither does `11 years from now`. A number string split by `-`, `/` or `.` can no longer have a date picked out of its middle, and there is a new reference page listing every supported wording in both languages: [`docs/dates.zh.md`](./docs/dates.zh.md).
+- 自动认日期收进了「今年到今年 + 10 年」这个窗口（2026 年就是 2026–2036），超出的不再认 —— 那些几乎都是编号、金额或写错的年份：`991231`、`000630`、`20990630` 不再变成日期，`11年后` 也不认；被 `-` `/` `.` 切开的数字串也不会再从中间抠出一个日期。另加了一份中英文日期时间写法清单：[`docs/dates.zh.md`](./docs/dates.zh.md)。
+
 ## 1.11.3 — 2026-09-27
 
 - Compact and dot-separated dates are picked up as well: `20260630`, `260630`, `0630` (this year, or next if that day has already passed) and `2026.06.30` all schedule the task, and a compact time can ride along — `20260630T1930` or `260630 1930`. A four-digit year accepts `-`, `/` and `.` as separators. Note that a bare four-digit number is read as month-day, so `1130` means 30 November rather than 11:30.

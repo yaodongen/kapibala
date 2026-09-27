@@ -428,13 +428,13 @@ const DATE_MATCHERS: Matcher[] = [
   },
   {
     name: 'num.yyyymmdd',
-    re: /\b(\d{4})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    re: /(?<![\d\-/.])(\d{4})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?(?![\d\-/.])/,
     note: '20260630（8 位连着写，前 4 位当年），后面可跟 T1930 / 1930',
     date: (m) => numericDay(Number(m[1]), Number(m[2]), Number(m[3]), [m[4], m[5], m[6], m[7]]),
   },
   {
     name: 'num.yymmdd',
-    re: /\b(\d{2})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    re: /(?<![\d\-/.])(\d{2})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?(?![\d\-/.])/,
     note: '260630（6 位，当 YYMMDD，26 → 2026；00–79 归 20xx，80–99 归 19xx），后面可跟 T1930 / 1930',
     date: (m) => {
       const yy = Number(m[1])
@@ -443,7 +443,7 @@ const DATE_MATCHERS: Matcher[] = [
   },
   {
     name: 'num.mmdd',
-    re: /\b(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    re: /(?<![\d\-/.])(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?(?![\d\-/.])/,
     note: '0630（4 位，当月/日；今年这天已过就顺延到明年），后面可跟 T1930 / 1930',
     date: (m, now) => {
       const t = startOfDay(now)
@@ -458,7 +458,8 @@ const DATE_MATCHERS: Matcher[] = [
   },
   {
     name: 'en.slash-md',
-    re: /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/,
+    // 前后都不许挨着数字或日期分隔符：不然 `2037/01/01` 里的 "01/01" 会被单独掏出来
+    re: /(?<![\d\-/.])(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?![\d\-/.])/,
     note: '8/28 或 8/28/2026，按美式"月/日"读',
     date: (m, now) => {
       const t = startOfDay(now)
@@ -671,12 +672,30 @@ export const WHEN_PATTERNS: WhenPattern[] = ALL_MATCHERS.map(({ name, re, note }
 
 type Found = { start: number; end: number; run: DateRun | TimeRun; matcher: Matcher }
 
+/**
+ * 认出来的日子必须落在「今年 ~ 今年 + 10 年」这一段里（2026 年就是 2026–2036）。
+ *
+ * 超出这段的几乎都是编号、金额或写错的年份被当成了日期（`991231` → 1999、
+ * `000630` → 2000、`20990630` → 2099），填一个错的日子比空着更糟。
+ * 相对说法一视同仁：`11年后` 也超出，一样不认。
+ *
+ * 代价说明：窗口的下沿是今年 1 月 1 日，所以 1 月初说 `前天` / `上周三`
+ * 如果落到了去年，会被这道理挡住 —— 宁可那天不预填，也不认一个去年的日子。
+ */
+function inYearWindow(day: number, now: number): boolean {
+  const year = new Date(day).getFullYear()
+  const thisYear = new Date(startOfDay(now)).getFullYear()
+  return year >= thisYear && year <= thisYear + 10
+}
+
 /** 跑一条 matcher，返回它在这段文本里**第一个**命中（非 global 正则，无 lastIndex 状态） */
 function firstHit(text: string, matcher: Matcher, now: number): Found | null {
   const m = matcher.re.exec(text)
   if (!m) return null
   const run = matcher.date ? matcher.date(m, now) : matcher.time ? matcher.time(m, now) : null
   if (!run) return null
+  // 日子超出年份窗口就当这条没认出来：时间照旧可以由别的规则单独认到
+  if (matcher.date && !inYearWindow((run as DateRun).day, now)) return null
   return { start: m.index, end: m.index + m[0].length, run, matcher }
 }
 
