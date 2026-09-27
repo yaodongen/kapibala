@@ -1,6 +1,6 @@
 {
   "name": "@kapibala/core",
-  "version": "1.11.1",
+  "version": "1.11.2",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +9,8 @@
     "./markdown": "./src/markdown.ts",
     "./order": "./src/order.ts",
     "./rrule": "./src/rrule.ts",
-    "./search": "./src/search.ts"
+    "./search": "./src/search.ts",
+    "./when": "./src/when.ts"
   },
   "license": "MIT"
 }

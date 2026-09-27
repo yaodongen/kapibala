@@ -6,6 +6,8 @@ import type { Task } from '@kapibala/core'
 // 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
 import { describeRepeat, describeRrule, presetsFor } from '@kapibala/core/rrule'
+// 纯函数，和 markdown / rrule 一样只从子路径引：从标题里认日期和时间，给添加栏预填
+import { parseWhenIn } from '@kapibala/core/when'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
@@ -508,6 +510,12 @@ function applyStatic() {
   ;($('search') as HTMLInputElement).placeholder = S.searchPlaceholder
   ;($('newTitle') as HTMLInputElement).placeholder = S.addPlaceholder
   ;($('dtitle') as HTMLInputElement).placeholder = S.titlePlaceholder
+  // 添加栏那两个原生日期/时间框没有可见标签，靠 title + aria-label 说清楚留空是什么意思
+  for (const [id, tip] of [['newDate', S.addDateTip], ['newTime', S.addTimeTip]] as Array<[string, string]>) {
+    const el = $(id)
+    el.title = tip
+    el.setAttribute('aria-label', tip)
+  }
   document.querySelectorAll<HTMLElement>('[data-lang]').forEach(el => { el.title = S.langSwitchTip })
   // 详情栏分隔线的提示写"它能干什么"，和语言/主题按钮一个规矩
   const sep = $('dresize')
@@ -2073,18 +2081,83 @@ function orderForNewDay(startAt: number): string {
 
 const ti = $('newTitle') as HTMLInputElement
 const di = $('newDate') as HTMLInputElement
+const ni = $('newTime') as HTMLInputElement
 const ri = $('newRepeat') as HTMLSelectElement
+
+/**
+ * 添加栏的日期/时间是不是"从标题里认出来、自动填的"。
+ * 用户自己动过哪个框，就不再覆盖哪个 —— 边打字边把他刚选的日期冲掉最招人烦。
+ */
+let dateAuto = false
+let timeAuto = false
+let dateManual = false
+let timeManual = false
+
+/** 当天第几分钟 → <input type=time> 认的 HH:mm。那个控件只认 24 小时制（见 hhmm24） */
+const timeValue = (minutes: number): string =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+
+/** <input type=date> 要的 YYYY-MM-DD。按本地时区拼，不能用 toISOString —— 那是 UTC */
+function dateValue(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * 边打字边认标题里的日期和时间，认到就预填，**标题原文一个字不动**。
+ * 用户改过的框不覆盖；认不出来了就把**自动填的**擦掉 —— 删掉"明天"之后
+ * 框里还留着明天，回车就存错了。
+ */
+function syncWhenFromTitle() {
+  const hit = parseWhenIn(ti.value)
+  let changed = false
+  if (hit?.day !== undefined && !dateManual) {
+    const v = dateValue(hit.day)
+    if (di.value !== v) { di.value = v; changed = true }
+    dateAuto = true
+  } else if (dateAuto && !dateManual) {
+    di.value = ''; dateAuto = false; changed = true
+  }
+  if (hit?.minutes !== undefined && !timeManual) {
+    const v = timeValue(hit.minutes)
+    if (ni.value !== v) { ni.value = v; changed = true }
+    timeAuto = true
+  } else if (timeAuto && !timeManual) {
+    ni.value = ''; timeAuto = false; changed = true
+  }
+  // 日期变了，重复预设（"每月第二个周二"那种）得跟着重算
+  if (changed) syncNewRepeat()
+}
+
+/** 建完一条，添加栏整个复位（预填标记也要清，下一条从头认） */
+function resetAddBar() {
+  ti.value = ''
+  di.value = ''
+  ni.value = ''
+  ri.value = ''
+  dateAuto = false
+  timeAuto = false
+  dateManual = false
+  timeManual = false
+  syncNewRepeat()
+}
+
+ti.addEventListener('input', syncWhenFromTitle)
 ti.addEventListener('keydown', async (e) => {
   if (e.key !== 'Enter' || !ti.value.trim()) return
-  const at = di.value ? +new Date(`${di.value}T00:00`) : today()   // 没选日期就是今天
+  const time = ni.value
+  // 没选日期就是今天；只认到时间没认到日期，也算今天那个点
+  const at = di.value
+    ? +new Date(`${di.value}T${time || '00:00'}`)
+    : time ? +new Date(`${dateValue(today())}T${time}`) : today()
   const id = await kapi['task:create']({
     title: ti.value.trim(),
     startAt: at,
+    isAllDay: !time,                  // 填了时间才算"定了点"，空着就是全天
     order: orderForNewDay(at),
     ...(ri.value ? { repeat: { rrule: ri.value } } : {}),
   })
-  ti.value = ''; di.value = ''; ri.value = ''
-  syncNewRepeat()
+  resetAddBar()
   // 刚建的任务直接接进详情栏 —— 建完常常还要补备注、改时间、加重复，
   // 不然得回列表里找它、再点开一次。焦点仍然留在添加栏（上面刚清空），
   // 所以连着敲下一条不会被打断
@@ -2228,7 +2301,13 @@ document.addEventListener('change', (e) => {
     customFor = null
     renderNewCustom(null)
   }
-  if (el.id === 'newDate') syncNewRepeat()      // 换了日期，预设跟着变
+  if (el.id === 'newDate') {
+    // change 只在用户真的动了控件时来（代码赋 value 不触发），所以这里就是"他手动选了"
+    dateManual = true
+    dateAuto = false
+    syncNewRepeat()      // 换了日期，重复预设跟着变
+  }
+  if (el.id === 'newTime') { timeManual = true; timeAuto = false }
   // 自定义日历的列数。存下去之后要重画：--cal-cols 由 render() 写进 #list
   if (el.id === 'calcols') {
     const n = Number((el as HTMLSelectElement).value)

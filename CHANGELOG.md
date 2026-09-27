@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.2 — 2026-09-27
+
+- Dates and times typed into a task title are picked up and filled in for you — “明天下午3点” and “next Monday at 3pm” alike — so the task lands where you meant without touching either picker. The title itself stays exactly as typed, any box you set by hand is never overwritten, and a new time field beside the date field makes a task timed to the minute; leave it blank and the task stays all-day.
+- 标题里写的日期和时间会被认出来、自动填进旁边的日期/时间框 ——「明天下午3点」「下周五」「tomorrow at 9:30am」都认，不用再手动点两个选择器；标题原文一个字不动，你手动改过的框也不会被覆盖。日期框旁边多了一个时间框，填了就是定了点，留空仍是全天。
+
 ## 1.11.1 — 2026-09-27
 
 - In the calendar views, the row you are renaming no longer drags: while its title is an input, pressing and moving inside it just selects text, so a half-typed title and the task both stay where they are. Leave the edit (Enter, Esc or a click elsewhere) and the row drags again; dragging rows in the list is unchanged.

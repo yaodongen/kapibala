@@ -108,6 +108,8 @@ const ZH = {
 
   // ── 列表 ──
   addPlaceholder: '添加任务，回车保存',
+  addDateTip: '日期（可留空）',
+  addTimeTip: '时间（留空为全天）',
   /**
    * 进行中任务行上那个徽标。中英文都用 "Doing" —— 列表行很窄，这个位置
    * 放三个字（"进行中"）比放五个字母还占地方，用一个词更清爽。
@@ -270,6 +272,8 @@ const EN: typeof ZH = {
   trashSub: 'Right-click to restore or delete for good',
 
   addPlaceholder: 'Add a task, press ⏎',
+  addDateTip: 'Date (optional)',
+  addTimeTip: 'Time (blank = all-day)',
   inProgress: 'Doing',
   unmarkInProgress: 'Unmark Doing',
   noRepeat: 'No repeat',

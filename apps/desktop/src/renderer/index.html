@@ -116,7 +116,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   background:var(--bg); color:var(--text); font:inherit; font-size:13.5px;
 }
 .add input[type=text]:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
-.add input[type=date],.add select{
+.add input[type=date],.add input[type=time],.add select{
   padding:8px; border:1px solid var(--border); border-radius:7px;
   background:var(--bg); color:var(--dim); font:inherit; font-size:12.5px;
 }
@@ -638,6 +638,8 @@ html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
     <div class="add" id="addbar">
       <input type="text" id="newTitle" autocomplete="off">
       <input type="date" id="newDate">
+      <!-- 时间。空着 = 全天；标题里认到"下午3点"会自动填上，也能自己选 -->
+      <input type="time" id="newTime">
       <!-- 选项由 syncNewRepeat() 按所选日期生成（"每月第二个周二"离开日期就没法写死） -->
       <select id="newRepeat"></select>
       <!-- 选了"自定义天数…"才有内容 -->
