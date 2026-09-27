@@ -25,7 +25,7 @@ export type WhenHit = {
   minutes?: number
   /** 只有日期、没认到时刻时为 true。界面据此决定要不要填时间、写不写 isAllDay */
   allDay: boolean
-  /** 命中的原文，按出现顺序拼起来（调试用；界面不拿它改标题） */
+  /** 命中的原文：从第一个片段到最后一个片段整段切下来（调试用；界面不拿它改标题） */
   text: string
   /** 命中片段在原文里的位置，按出现顺序。用于日志、以后想做高亮 */
   spans: Array<{ start: number; end: number }>
@@ -411,36 +411,49 @@ const DATE_MATCHERS: Matcher[] = [
     date: (m, now) => enMonthDay(EN_MONTH[m[2]!.slice(0, 3)]!, Number(m[1]), m[3], now),
   },
   {
-    name: 'en.iso',
-    re: /\b(\d{4})-(\d{1,2})-(\d{1,2})(?:[t\s](\d{1,2}):(\d{2}))?/,
-    note: '2026-08-28、2026-08-28T19:30；IEC 格式里带的时刻也一起认',
+    name: 'en.big-endian',
+    re: /\b(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?!\d)(?:[t\s](\d{1,2}):(\d{2}))?/,
+    note: '2026-08-28、2026/08/28、2026.06.30（年在前，- / . 三种分隔符都认），后面可跟 19:30 / T19:30',
     date: (m) => {
-      const month = Number(m[2])
-      const day = Number(m[3])
-      if (month < 1 || month > 12 || day < 1 || day > 31) return null
-      const dt = new Date(Number(m[1]), month - 1, day)
-      if (dt.getMonth() !== month - 1 || dt.getDate() !== day) return null
-      const out: DateRun = { day: startOfDay(+dt) }
+      const d = makeDay(Number(m[1]), Number(m[2]), Number(m[3]))
+      if (d === null) return null
+      const out: DateRun = { day: d }
       if (m[4] !== undefined) {
         const h = Number(m[4])
         const mi = Number(m[5])
-        if (h > 23 || mi > 59) return { day: out.day }
-        out.minutes = h * 60 + mi
+        if (h <= 23 && mi <= 59) out.minutes = h * 60 + mi
       }
       return out
     },
   },
   {
-    name: 'en.slash',
-    re: /\b(\d{4})\/(\d{1,2})\/(\d{1,2})\b/,
-    note: '2026/08/28（年/月/日）',
+    name: 'num.yyyymmdd',
+    re: /\b(\d{4})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    note: '20260630（8 位连着写，前 4 位当年），后面可跟 T1930 / 1930',
+    date: (m) => numericDay(Number(m[1]), Number(m[2]), Number(m[3]), [m[4], m[5], m[6], m[7]]),
+  },
+  {
+    name: 'num.yymmdd',
+    re: /\b(\d{2})(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    note: '260630（6 位，当 YYMMDD，26 → 2026；00–79 归 20xx，80–99 归 19xx），后面可跟 T1930 / 1930',
     date: (m) => {
-      const month = Number(m[2])
-      const day = Number(m[3])
-      if (month < 1 || month > 12 || day < 1 || day > 31) return null
-      const dt = new Date(Number(m[1]), month - 1, day)
-      if (dt.getMonth() !== month - 1 || dt.getDate() !== day) return null
-      return { day: startOfDay(+dt) }
+      const yy = Number(m[1])
+      return numericDay(yy <= 79 ? 2000 + yy : 1900 + yy, Number(m[2]), Number(m[3]), [m[4], m[5], m[6], m[7]])
+    },
+  },
+  {
+    name: 'num.mmdd',
+    re: /\b(\d{2})(\d{2})(?:t(\d{2})(\d{2})|\s+(\d{2})(\d{2}))?\b/,
+    note: '0630（4 位，当月/日；今年这天已过就顺延到明年），后面可跟 T1930 / 1930',
+    date: (m, now) => {
+      const t = startOfDay(now)
+      const year = new Date(t).getFullYear()
+      const month = Number(m[1])
+      const day = Number(m[2])
+      const t2 = [m[3], m[4], m[5], m[6]]
+      const hit = numericDay(year, month, day, t2)
+      if (hit && hit.day! < t) return numericDay(year + 1, month, day, t2)
+      return hit
     },
   },
   {
@@ -514,13 +527,45 @@ function enMonthDay(month: number, day: number, yearSrc: string | undefined, now
   return { day: out }
 }
 
+/** 年 + 月(1–12) + 日 → 当天零点；不是合法日期返回 null（2月30日、13月都要挡住） */
+function makeDay(year: number, month: number, day: number): number | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  const d = new Date(year, month - 1, day)
+  if (d.getMonth() !== month - 1 || d.getDate() !== day) return null
+  return startOfDay(+d)
+}
+
+/**
+ * 紧凑日期后面紧跟的时刻：`T1930` 或空格加 `1930`。
+ * 认不出来或数字越界就当没写时刻 —— 时刻只是附带，不能因为它把日期也弄丢。
+ */
+function compactTime(g: Array<string | undefined>): number | undefined {
+  const h = Number(g[0] ?? g[2])
+  const mi = Number(g[1] ?? g[3])
+  if (g[0] === undefined && g[2] === undefined) return undefined
+  if (!Number.isFinite(h) || !Number.isFinite(mi) || h > 23 || mi > 59) return undefined
+  return h * 60 + mi
+}
+
+/** 紧凑数字日期（20260630 / 260630 / 0630）+ 可选的紧凑时刻 */
+function numericDay(year: number, month: number, day: number, t: Array<string | undefined>): DateRun | null {
+  const d = makeDay(year, month, day)
+  if (d === null) return null
+  const out: DateRun = { day: d }
+  const minutes = compactTime(t)
+  if (minutes !== undefined) out.minutes = minutes
+  return out
+}
+
 /* 时间 ─────────────────────────────────────────────────────────────────── */
 
 const TIME_MATCHERS: Matcher[] = [
   {
     name: 'cn.period-clock',
+    // 时段那一截整个可选，连着它后面的空格一起 —— 写成 `(时段)?\s*` 的话，
+    // 没有时段时 `\s*` 也会把钟点前面的空格吃进 span 里（" 19:30"）
     re: new RegExp(
-      `(${CN_PERIOD_RE})?\\s*(?:(${CN_NUM_RE})\\s*[点時时]\\s*(?:(半)|(?:(${CN_NUM_RE})\\s*分?)?)|(\\d{1,2}):(\\d{2}))`,
+      `(?:(${CN_PERIOD_RE})\\s*)?(?:(${CN_NUM_RE})\\s*[点時时]\\s*(?:(半)|(?:(${CN_NUM_RE})\\s*分?)?)|(\\d{1,2}):(\\d{2}))`,
     ),
     note: '3点 / 3点半 / 15点30分 / 三点半 / 下午3点 / 晚上8:30 / 15:30',
     time: (m) => {
@@ -725,8 +770,9 @@ export function parseWhenIn(text: string, now: number = Date.now()): WhenHit | n
   const hit: WhenHit = {
     allDay: minutes === undefined,
     // 从**原文**切，不是从归一化过的串切 —— 归一化只是一对一替换，
-    // 位置对得上，但用户看到的原样（全角数字、大写）要还回去
-    text: spans.map(s => text.slice(s.start, s.end)).join(''),
+    // 位置对得上，但用户看到的原样（全角数字、大写）要还回去。
+    // 取首尾之间整段，中间那点连接词（"6月30日 19:30"里那个空格）也跟着留下来
+    text: text.slice(spans[0]!.start, spans[spans.length - 1]!.end),
     spans,
   }
   if (day !== undefined) hit.day = day

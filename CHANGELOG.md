@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.3 — 2026-09-27
+
+- Compact and dot-separated dates are picked up as well: `20260630`, `260630`, `0630` (this year, or next if that day has already passed) and `2026.06.30` all schedule the task, and a compact time can ride along — `20260630T1930` or `260630 1930`. A four-digit year accepts `-`, `/` and `.` as separators. Note that a bare four-digit number is read as month-day, so `1130` means 30 November rather than 11:30.
+- 紧凑写法和点分隔的日期也认了：`20260630`、`260630`、`0630`（今年这天已经过了就算明年）、`2026.06.30` 都能定到日子，后面还能跟上紧凑时刻 —— `20260630T1930`、`260630 1930`；四位数年份后面的分隔符 `-`、`/`、`.` 都行。注意 4 位纯数字按「月日」读，`1130` 是 11 月 30 日而不是 11:30。
+
 ## 1.11.2 — 2026-09-27
 
 - Dates and times typed into a task title are picked up and filled in for you — “明天下午3点” and “next Monday at 3pm” alike — so the task lands where you meant without touching either picker. The title itself stays exactly as typed, any box you set by hand is never overwritten, and a new time field beside the date field makes a task timed to the minute; leave it blank and the task stays all-day.
