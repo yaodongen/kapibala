@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Store } from '../src/store.ts'
-import { MemFs, memEnv } from '../src/testing.ts'
+import { MemFs, MemClock, memEnv } from '../src/testing.ts'
 import { parseSegment } from '../src/log.ts'
 import { NOT_DOWNLOADED, openVault } from '../src/vault.ts'
+import { legacyOccurrenceId } from '../src/repeat.ts'
 
 const V = '/vault'
 const setup = async () => {
@@ -105,6 +106,198 @@ describe('周期任务', () => {
     const id = await s.add({ title: '周会', startAt: +new Date('2026-08-25T09:00:00'), repeat: { freq: 'WEEKLY' } })
     const next = await s.complete(id)
     expect(next!.important).toBe(false)
+  })
+
+  /**
+   * 真实踩到过的那条：把派生出来的某一期从原定日期**拖回早先的日期**，再完成。
+   * 旧写法按"系列 + 日期"派生 ID，往后推就又落回自己占着的那个 ID，于是静默写不出来
+   * —— 勾了完成什么都不出现，系列从此断掉。现在 ID 链在上一期上，日期只决定排在哪天。
+   */
+  it('派生出来的那一期被拖回早先的日期后再完成，照样派得出下一期', async () => {
+    const { s } = await setup()
+    const first = await s.add({ title: '每2天读书 20 分钟', startAt: +new Date('2026-09-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' } })
+
+    const sep28 = (await s.complete(first))!        // 9/28 那一期
+    expect(new Date(sep28.startAt!).getDate()).toBe(28)
+
+    const sep30 = (await s.complete(sep28.id))!     // 9/30 那一期
+    expect(new Date(sep30.startAt!).getDate()).toBe(30)
+
+    // 把它拖回 9/28（真实库里就是这么拖的），再完成
+    await s.setMany([
+      { id: sep30.id, f: 'startAt', val: +new Date('2026-09-28T00:00:00') },
+      { id: sep30.id, f: 'order', val: '0000l' },
+    ])
+    const next = await s.complete(sep30.id)
+
+    expect(next).not.toBeNull()
+    expect(next!.seriesId).toBe(first)
+    // 下一期 = 这一期的日期 + 2 天，而且是一条**全新**的实例（不是那两个老 ID）
+    expect(new Date(next!.startAt!).toDateString()).toBe(new Date('2026-09-30T00:00:00').toDateString())
+    expect(next!.id).not.toBe(sep28.id)
+    expect(next!.id).not.toBe(sep30.id)
+    // 已完成的那两期不能被改坏
+    expect(new Date(s.task(sep28.id)!.startAt!).toDateString()).toBe(new Date('2026-09-28T00:00:00').toDateString())
+    expect(new Date(s.task(sep30.id)!.startAt!).toDateString()).toBe(new Date('2026-09-28T00:00:00').toDateString())
+    expect(s.task(sep30.id)!.completedAt).toBeGreaterThan(0)
+  })
+
+  it('同一天可以排下多条：那天已经有一条，也不影响新派生一条', async () => {
+    const { s } = await setup()
+    const first = await s.add({ title: '读书', startAt: +new Date('2026-09-28T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' } })
+    await s.add({ title: '另外一条读书安排', startAt: +new Date('2026-09-30T00:00:00') })   // 手动排在同一天
+
+    const next = await s.complete(first)
+    expect(new Date(next!.startAt!).toDateString()).toBe(new Date('2026-09-30T00:00:00').toDateString())
+    const thatDay = s.tasks().filter(t => new Date(t.startAt!).toDateString() === new Date('2026-09-30T00:00:00').toDateString())
+    expect(thatDay).toHaveLength(2)
+  })
+
+  it('槽位上有待做的那一期时不重复派生（同一期勾两次）', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '吃药', startAt: +new Date('2026-08-25T21:00:00'), repeat: { rrule: 'FREQ=DAILY' } })
+    const next = (await s.complete(id))!
+    await s.uncomplete(id)
+    const again = await s.complete(id)
+    expect(again!.id).toBe(next.id)
+    expect(s.tasks().filter(t => t.seriesId === id)).toHaveLength(1)
+  })
+
+  /** 用户的例子：9/28 那期拖到 9/26，9/30 才点完成 —— 下一期还是"9/26 + 2 天"。 */
+  it('把这一期拖到早先的日子再完成，下一期仍按这一期的日期 + 周期算，不看完成时刻', async () => {
+    const fs = new MemFs()
+    const clock = new MemClock()
+    const s = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua', clock }), V, true)
+    const id = await s.add({
+      title: '读书 20 分钟',
+      startAt: +new Date('2026-09-29T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' },
+    })
+    await s.setField(id, 'startAt', +new Date('2026-09-26T00:00:00'))   // 拖到 9/26
+    clock.set(+new Date('2026-09-30T15:00:00'))                         // 拖完四天才点完成
+
+    const next = await s.complete(id)
+    expect(new Date(next!.startAt!).toDateString()).toBe(new Date('2026-09-28T00:00:00').toDateString())
+  })
+
+  it('一律按原计划：落下的那一期照样补出来（可能显示成逾期）', async () => {
+    const fs = new MemFs()
+    const clock = new MemClock(+new Date('2026-09-30T10:00:00'))
+    const s = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua', clock }), V, true)
+    const id = await s.add({
+      title: '每天一篇 checklist',
+      startAt: +new Date('2026-09-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY' },
+    })
+    const next = await s.complete(id)
+    // 计划里的下一期是 9/27，哪怕已经过期也给 —— 不再从完成那天重排
+    expect(new Date(next!.startAt!).toDateString()).toBe(new Date('2026-09-27T00:00:00').toDateString())
+  })
+
+  it('被删掉的那一期：跳过它，从它接着往后推一期', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '读书', startAt: +new Date('2026-08-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' } })
+    const aug28 = (await s.complete(id))!
+    await s.trash(aug28.id)
+    await s.uncomplete(id)
+    const next = await s.complete(id)
+    expect(next).not.toBeNull()
+    expect(new Date(next!.startAt!).getDate()).toBe(30)      // 8/28 那次跳过，8/30 那次
+    expect(s.task(aug28.id)!.deleted).toBe(true)             // 删掉的还是删掉的
+  })
+
+  it('被清空垃圾桶的那一期：同样跳过，系列不断', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '读书', startAt: +new Date('2026-08-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' } })
+    const aug28 = (await s.complete(id))!
+    await s.trash(aug28.id)
+    await s.purgeAll()
+    await s.uncomplete(id)
+    const next = await s.complete(id)
+    expect(next).not.toBeNull()
+    expect(new Date(next!.startAt!).getDate()).toBe(30)
+    expect(s.task(aug28.id)).toBeUndefined()                 // 已清空的不该回来
+  })
+
+  /**
+   * 造一个"被旧代码写坏"的系列：最新那一期拖回早先日期之后直接写 completedAt
+   * （＝旧代码那次静默跳过的完成），下一期根本没被写出来 —— 链在这里断掉。
+   */
+  async function brokenSeries(s: Store) {
+    const first = await s.add({
+      title: '每2天读书 20 分钟',
+      startAt: +new Date('2026-09-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' },
+    })
+    await s.setField(first, 'important', true)
+    const sep28 = (await s.complete(first))!
+    const sep30 = (await s.complete(sep28.id))!
+    await s.setMany([{ id: sep30.id, f: 'startAt', val: +new Date('2026-09-28T00:00:00') }])
+    await s.setField(sep30.id, 'completedAt', +new Date('2026-09-28T16:21:43'))   // 旧代码：静默跳过
+    return { first, sep28, sep30 }
+  }
+
+  it('打开时自愈：链条断掉的系列，把缺的那一期补上', async () => {
+    const { s } = await setup()
+    const { first, sep30 } = await brokenSeries(s)
+    expect(s.tasks().some(t => t.seriesId === first && t.completedAt === undefined)).toBe(false)
+
+    expect(await s.healSeries()).toBe(1)
+    const pending = s.tasks().filter(t => t.seriesId === first && t.completedAt === undefined)
+    expect(pending).toHaveLength(1)
+    // 最新那期在 9/28（拖过去的），它的下一期就是 9/30
+    expect(new Date(pending[0]!.startAt!).toDateString()).toBe(new Date('2026-09-30T00:00:00').toDateString())
+    expect(pending[0]!.important).toBe(true)                 // 重要照样一路传下去
+    expect(new Date(s.task(sep30.id)!.startAt!).toDateString()).toBe(new Date('2026-09-28T00:00:00').toDateString())
+
+    expect(await s.healSeries()).toBe(0)                     // 幂等，再打开一次不再补
+  })
+
+  it('打开时自愈：下一期被删过就不补（系列停在用户删它的地方）', async () => {
+    const { s } = await setup()
+    const { sep28, sep30 } = await brokenSeries(s)
+    await s.trash(sep30.id)                                  // 用户把 sep28 的下一期删了
+    expect(await s.healSeries()).toBe(0)
+    expect(s.task(sep30.id)!.deleted).toBe(true)
+    expect(s.task(sep28.id)!.completedAt).toBeGreaterThan(0)
+  })
+
+  it('打开时自愈：老库按日期派生的那一期被删过，也不补（认得出它就躺在那个 ID 上）', async () => {
+    const { s } = await setup()
+    const first = await s.add({
+      title: '每2天读书 20 分钟',
+      startAt: +new Date('2026-09-26T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' },
+    })
+    await s.setField(first, 'completedAt', +new Date('2026-09-26T11:37:00'))
+    // 老方案写下的下一期：ID = (系列, 2026-09-28)
+    const legacy = legacyOccurrenceId(first, +new Date('2026-09-28T00:00:00'))
+    await s.add({
+      id: legacy, seriesId: first, title: '每2天读书 20 分钟',
+      startAt: +new Date('2026-09-28T00:00:00'), repeat: { rrule: 'FREQ=DAILY;INTERVAL=2' },
+    })
+    await s.trash(legacy)                                    // 用户把它删了
+
+    expect(await s.healSeries()).toBe(0)
+    expect(s.task(legacy)!.deleted).toBe(true)
+    expect(s.tasks().filter(t => !t.deleted && (t.seriesId ?? t.id) === first)).toHaveLength(1)
+  })
+
+  it('打开时自愈：健康的系列（已经有待做的下一期）不动', async () => {
+    const { s } = await setup()
+    const id = await s.add({ title: '周会', startAt: +new Date('2026-08-25T09:00:00'), repeat: { freq: 'WEEKLY' } })
+    const next = (await s.complete(id))!
+    expect(await s.healSeries()).toBe(0)
+    expect(s.tasks().filter(t => t.seriesId === id)).toHaveLength(1)
+    expect(s.task(next.id)!.completedAt).toBeUndefined()
+  })
+
+  it('打开时自愈：两台 Mac 各自补一次，合并后只有一期', async () => {
+    const fs = new MemFs()
+    const a = await Store.open(memEnv({ fs, machineId: 'MACHINE-A', userDataDir: '/ua' }), V, true)
+    const b = await Store.open(memEnv({ fs, machineId: 'MACHINE-B', userDataDir: '/ub' }), V)
+    const { first } = await brokenSeries(a)
+
+    await a.healSeries()
+    await b.healSeries()                                     // B 还没看到 A 的补写，也补了一次
+    await a.refresh()
+    expect(a.tasks().filter(t => t.seriesId === first && t.completedAt === undefined)).toHaveLength(1)
   })
 })
 

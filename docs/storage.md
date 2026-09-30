@@ -480,12 +480,14 @@ The problem: completing a repeating task creates the next instance. If two Macs 
 The fix: **derive the instance ID deterministically instead of using a random ULID.**
 
 ```ts
-nextId = derive(`${seriesId}|${occurrenceDate}`)
+nextId = derive(`${seriesId}|${parentInstanceId}`)
 ```
 
 Both machines compute the same ID, their ops land on the same entity, and field-level LWW merges them into one task. Generation becomes idempotent and needs no coordination whatsoever.
 
-In `afterCompletion` mode the occurrence key is derived from the completion time, and two machines can be seconds apart → different IDs → two instances again. So in that mode the completion time is **rounded to the day** (in the local date for `tz`) before deriving. Completing several times within one day cannot fork.
+**Why the chain hangs off the previous instance rather than off the date.** Up to 1.11.4 the key was `series|that day's date`, and both failure modes came from the fact that the date is something the user can drag. Drag a generated occurrence back onto an earlier day and complete it, and the next date lands on a slot that already exists — at worst on the instance itself — where the old code quietly wrote nothing and the series died days before anyone noticed. Even without a collision, dragging the next occurrence onto today and ticking it off spends a future day early, so the next date drifts forward every time. Chaining off the previous instance means every occurrence is a fresh entity and the date only decides when it sits. Date-keyed IDs already written into old vaults keep working (IDs are opaque to the layers above); `legacyOccurrenceId` recognises them when needed.
+
+A fixed schedule advances from **that occurrence's own date**, never from the moment it was ticked off: otherwise ticking it off on the planned day pushes the next one out by a whole period ("every 2 days" becomes "2 days after you're done"), and two machines completing the same occurrence at different times derive different dates. Only `afterCompletion` advances from the completion day, and it **rounds that time to the day** (in the local date for `tz`) so that any hour of the same day lands on the same date.
 
 ### 7.3 Ordering uses a fractional index, not an integer
 

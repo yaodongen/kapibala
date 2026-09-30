@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { describeRrule, formatRrule, nextAfter, parseRrule, presetsFor } from '../src/rrule.ts'
 import { nextOccurrence, toRruleString } from '../src/repeat.ts'
+import { derivedId } from '../src/ids.ts'
 import type { Task } from '../src/types.ts'
 
 const at = (s: string) => +new Date(s)
@@ -217,22 +218,43 @@ describe('周期实例的生成', () => {
     deleted: false, startAt: at(startAt), repeat, inProgress: false, important: false,
   })
 
-  it('固定周期会跳过已经过去的那些，不补历史', () => {
+  it('固定周期按原计划推进：从这一期自己的日期往后一个周期，不看完成时刻', () => {
     const t = base({ rrule: 'FREQ=WEEKLY;BYDAY=WE' }, '2026-08-26T09:00')
-    const next = nextOccurrence(t, at('2026-09-20T10:00'))!   // 拖了三周半才完成
-    expect(day(next.startAt)).toBe('Wed Sep 23 2026')
+    // 8/26 那期拖到 9/20 才完成：计划里的下一期还是 9/2（不是"完成后一周"的 9/23）
+    expect(day(nextOccurrence(t, at('2026-09-20T10:00'))!.startAt)).toBe('Wed Sep 02 2026')
+    // 哪天勾都是同一期、同一个 ID —— 两台机器才不会各生成一个
+    const a = nextOccurrence(t, at('2026-08-26T10:00'))!
+    const b = nextOccurrence(t, at('2026-09-02T10:00'))!
+    const c = nextOccurrence(t, at('2026-09-20T10:00'))!
+    expect(a.id).toBe(c.id)
+    expect(a.id).toBe(b.id)
+    expect(a.startAt).toBe(c.startAt)
+  })
+
+  it('实例 ID 链在上一期上：日期被拖到哪都不影响它是全新的一期', () => {
+    const t = base({ rrule: 'FREQ=DAILY;INTERVAL=2' }, '2026-09-28T00:00')
+    const n = nextOccurrence(t, at('2026-09-28T10:00'))!
+    // 不再跟"9/30 那一天"绑定：ID 由 (系列, 上一期) 算出，不是旧的 (系列, 日期)
+    expect(n.id).not.toBe(derivedId(t.id, '2026-09-30'))
+    expect(n.startAt).toBe(+new Date('2026-09-30T00:00:00'))
   })
 
   it('UNTIL 到了就没有下一次了', () => {
     const t = base({ rrule: 'FREQ=DAILY;UNTIL=20260827' }, '2026-08-26T09:00')
-    expect(nextOccurrence(t, at('2026-08-27T10:00'))).toBeNull()
+    // 8/26 那期还能推出计划里的最后一期 8/27，哪怕隔了两周才勾
+    expect(day(nextOccurrence(t, at('2026-09-10T10:00'))!.startAt)).toBe('Thu Aug 27 2026')
+    // 8/27 那期之后就没有了
+    const last = base({ rrule: 'FREQ=DAILY;UNTIL=20260827' }, '2026-08-27T09:00')
+    expect(nextOccurrence(last, at('2026-08-27T10:00'))).toBeNull()
   })
 
   it('两台机器各自完成同一次，实例 ID 相同（不会分叉）', () => {
     const t = base({ rrule: 'FREQ=MONTHLY;BYDAY=2TU' }, '2026-08-11T09:00')
     const a = nextOccurrence(t, at('2026-08-11T20:00'))!
     const b = nextOccurrence(t, at('2026-08-11T21:30'))!
+    const c = nextOccurrence(t, at('2026-09-05T09:00'))!    // 隔了三周才在那台机器上勾
     expect(a.id).toBe(b.id)
+    expect(a.id).toBe(c.id)
     expect(a.startAt).toBe(b.startAt)
   })
 

@@ -269,6 +269,14 @@ async function openVault(path: string, create = false): Promise<Store> {
   const s = await Store.open(env, path, create)
   store = s
   watchVault(s)
+  // 打开时自愈：把被"派生槽位被占"那个 bug 断掉的周期任务接上（见 Store.healSeries）。
+  // 幂等，接上以后条件就不成立了；只读打开时不能写，跳过
+  if (!s.vault.readOnly) {
+    try {
+      const healed = await withLock(s.vault.entry.id, () => s.healSeries())
+      if (healed) log('info', '自愈：补上断掉的周期任务', { count: healed, path })
+    } catch (e) { log('error', '自愈失败', e) }
+  }
   return s
 }
 

@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.5 — 2026-09-30
+
+- Instance IDs now chain off **the previous instance** instead of off a date, and the next occurrence is counted from **that occurrence's own date** rather than from the moment you tick it off. Dragging an occurrence back onto an earlier day and completing it used to derive a date whose ID was already taken: the app quietly wrote nothing and the series ended right there. Dragging the next one onto today used to spend a future day and push the schedule out a little further each time. Ticking one off on its planned day no longer shoves the schedule out by a whole period, two devices completing the same occurrence no longer derive two different dates, and opening a vault repairs series the old scheme already broke. A day you deleted or emptied from the trash is never resurrected.
+- 周期实例的 ID 改成链在**上一期**上（不再是"系列 + 那一天的日期"），下一期也只从**这一期自己的日期**往后算，不再从"你点完成的那一刻"算。以前把派生出来的某一期拖回早先的日子再完成，算出来的日期会撞上已经用过的 ID —— 勾了完成什么都不写，系列从此断掉；把"下一期"拖到今天再勾，又会把未来那一天提前用掉，日期一次比一次往后漂。现在在计划上那一天点完成不会再被推后一个周期，两台机器完成同一次也不会各算出一个日期，打开库还会自愈已经被老写法断掉的系列；你删掉或清空过的那一期一律不复活。
+
 ## 1.11.4 — 2026-09-27
 
 - Automatic date detection is now held to a window of this year through ten years out (2026–2036). Anything outside it is left unscheduled, because out-of-range dates are almost always an order number, an amount, or a mistyped year: `991231`, `000630` and `20990630` no longer become dates, and neither does `11 years from now`. A number string split by `-`, `/` or `.` can no longer have a date picked out of its middle, and there is a new reference page listing every supported wording in both languages: [`docs/dates.zh.md`](./docs/dates.zh.md).
