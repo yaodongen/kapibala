@@ -60,9 +60,9 @@ const ZH = {
   themeToLight: '切换到日间模式',
   /**
    * 日历视图的「显示已完成」开关。和主题开关一样，提示语写"点了会变成什么"：
-   * 打开后格子里会多出**那天完成**的任务（按完成日期归格，不是原来的安排日期）
+   * 打开后格子里会多出打过钩的任务，它们仍在**原来安排的那天**（不是完成那天）
    */
-  showDoneOn: '显示当天已完成的任务',
+  showDoneOn: '显示已完成的任务',
   showDoneOff: '不显示已完成的任务',
   /**
    * 日历视图（自定义）的范围和列数。范围是用户拖出来的，副标题跟着显示，
@@ -236,7 +236,7 @@ const EN: typeof ZH = {
   langSwitchTip: 'Switch interface language',
   themeToDark: 'Switch to dark mode',
   themeToLight: 'Switch to light mode',
-  showDoneOn: 'Show tasks completed that day',
+  showDoneOn: 'Show completed tasks',
   showDoneOff: 'Hide completed tasks',
   calendarCustom: 'Calendar (custom)',
   calendarCustomSub: (from, to, cols) => `${from} – ${to}, ${cols} columns`,

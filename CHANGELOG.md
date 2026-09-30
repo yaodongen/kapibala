@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.6 — 2026-09-30
+
+- The "show completed" toggle now belongs to all three calendar views, the custom date range included. Completed tasks stay on **the day they were planned for** instead of moving to the day you ticked them off, so finishing something early no longer shifts it to another cell or makes it vanish from a range that doesn't cover today; within a cell they still sink below the open ones, most recently finished first. When the completion day differs from the day the row sits on, the row now carries that date as well — `✓ 28 Sep 15:00` — so an entry finished early or ticked off later is not mistaken for one finished on its planned day.
+- 日历视图的「显示已完成」开关现在三个视图都有，自定义的日期范围那一屏也算在内。已完成的任务一律留在**原来安排的那天**，不再挪到勾掉它的那天 —— 提前做完既不会换格子，也不会从你选的、不含今天的范围里消失；一格之内它们照旧沉在未完成的下面，最近完成的排最前。完成日和这一行所在的那天不是同一天时，行上还会把完成日期带上（如 `✓ 9月28日 15:00`），提前做完或事后补勾都不会被当成当天了结的。
+
 ## 1.11.5 — 2026-09-30
 
 - Instance IDs now chain off **the previous instance** instead of off a date, and the next occurrence is counted from **that occurrence's own date** rather than from the moment you tick it off. Dragging an occurrence back onto an earlier day and completing it used to derive a date whose ID was already taken: the app quietly wrote nothing and the series ended right there. Dragging the next one onto today used to spend a future day and push the schedule out a little further each time. Ticking one off on its planned day no longer shoves the schedule out by a whole period, two devices completing the same occurrence no longer derive two different dates, and opening a vault repairs series the old scheme already broke. A day you deleted or emptied from the trash is never resurrected.

@@ -1,6 +1,6 @@
 {
   "name": "kapibala-monorepo",
-  "version": "1.11.5",
+  "version": "1.11.6",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.23.0",

@@ -135,9 +135,10 @@ let vault: VaultState | null = null
 const DEFAULT_VIEW: ViewId = 'next7'
 let view: ViewId = DEFAULT_VIEW
 /**
- * 日历视图要不要显示"当天已完成"的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
- * 打开后已完成的任务按**完成那天**归格，不是它原来安排在哪天（见 pick / calendarCells）。
- * 状态存在 ui.json 里，和语言、主题一样是本机偏好，两个日历视图共用这一个开关。
+ * 日历视图要不要显示已完成的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
+ * 打开后打过钩的也留在格子里，**仍然挂在原来安排的那天**（不是完成那天）——
+ * 安排不该因为事情提前做完就挪位置，完成时间由行上那个 ✓ 说。状态存在 ui.json 里，
+ * 和语言、主题一样是本机偏好，**三个日历视图共用这一个开关**（7d / 14d / 自定义）。
  */
 let showDone = false
 /**
@@ -326,11 +327,19 @@ function pick(v: ViewId): Task[] {
   const cal = CAL[v]
   if (cal) {
     const t1 = t0 + DAY * cal.days
-    // 开关打开：再把"这几天里完成的任务"加进来，按完成那天落在格子里。
-    // 完成时间在今天之前的（更早的历史）没有对应的格子，就不上日历 —— 那是"已完成"视图的事
-    if (showDone) return alive().filter(t => t.completedAt !== undefined
-      ? dayStart(t.completedAt) >= t0 && dayStart(t.completedAt) < t1
-      : t.startAt !== undefined && t.startAt < t1)
+    /**
+     * 开关打开：已完成的任务也进来，但**仍挂在原来安排的那天**（不是完成那天）——
+     * 格子上的安排不该因为事情提前做完就挪位置；什么时候了结的，行上那个 ✓ 时间说得清。
+     *
+     * 排期在今天之前的已完成任务**不进日历**：它们唯一的落脚点是第一格"已逾期"，
+     * 而那一格说的是"还没做完、拖着的事"；开关一开就把全部历史塞进去，那格就没法看了。
+     * 例外是**刚勾完的那一条**（在 leaving 里留 LINGER 毫秒）：让它在逾期格里淡出再走，
+     * 一勾就凭空消失会让人以为没勾上（见 calendarCells 和 calRow 的 fading）。
+     */
+    if (showDone) return alive().filter(t => {
+      if (t.startAt === undefined || t.startAt >= t1) return false
+      return t.completedAt === undefined || t.startAt >= t0 || leaving.has(t.id)
+    })
     return undone().filter(t => t.startAt !== undefined && t.startAt < t1)
   }
   /**
@@ -340,10 +349,16 @@ function pick(v: ViewId): Task[] {
    * 这里用户指定了要看哪几天，格子也只有那几天，逾期任务压根没有落脚的地方 ——
    * 硬塞进去只能塞进第一天，看着像那天的事，是错的。
    * 范围之外的安排当然也不进（包括范围开始之前那些过了期的）。
+   *
+   * 「显示已完成」打开后，已完成的任务和上面一样**挂在原来安排的那天**。
+   * 这一屏只有范围里那几天、没有"已逾期"格，所以两边筛法是同一个 —— 只是从 undone()
+   * 换成 alive()，让打过钩的也进得来。
    */
   if (v === CAL_CUSTOM) {
     const r = rangeForCustom()
-    return undone().filter(t => t.startAt !== undefined && t.startAt >= r.from && t.startAt < r.to + DAY)
+    const inRange = (t: Task) =>
+      t.startAt !== undefined && t.startAt >= r.from && t.startAt < r.to + DAY
+    return (showDone ? alive() : undone()).filter(inRange)
   }
   if (v === 'next30') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY * 30)
   if (v === 'all') return undone()
@@ -399,19 +414,24 @@ function group(list: Task[], v: ViewId): Group[] {
  * 日历视图的格子：第一格固定是"已逾期"，其余是今天起 days 天，一共 days + 1 格。
  * 逾期任务没有哪一天可归，只有单独一格才放得下；它排在前面，和列表视图的"逾期置顶"一个观感。
  *
- * 开关打开后，已完成的任务也进来，按**完成那天**落在对应格（不是安排日期）——
- * "这周哪天了结了什么事"一眼能看到；完成时间在这几天之前的没有格子可落，不上日历。
+ * 开关打开后，已完成的任务也进来，但**照样归在原来安排的那天**（哪些进得来由 pick 定，
+ * 排期在今天之前的已完成任务在那一步就被挡掉了 —— 它们没有格子可落，"已逾期"格只放
+ * 还没做完的事）。行上给的是完成时间，格子的位置说的却是"原本安排在哪天"。
  *
  * 格子按 CAL 里的列数铺成若干行（见 index.html 的 .list.cal），DOM 顺序就是阅读顺序。
  * 空格子也照画 —— 日历凭空少一天比空着更像坏了，而且格子位置固定，勾掉一条时
  * 后面的天数不会整体往前挪。
  */
-type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?: boolean; today?: boolean }
+/**
+ * day 是"这一格是哪天"（那天的零点），只有真实的日期格才有；"已逾期"那格跨好几天，
+ * 没有具体哪一天，所以是 undefined —— 行上要不要补完成日期就看它（见 calRow）。
+ */
+type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?: boolean; today?: boolean; day?: number }
 /**
  * 一格里的先后：未完成在上、已完成沉底（见下），未完成那一段按**手排的 order** ——
  * 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
  * 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到。
- * 两个日历视图共用（7d / 14d 和自定义），两处的格子顺序才不会各走各的。
+ * 三个日历视图共用（7d / 14d 和自定义），三处的格子顺序才不会各走各的。
  */
 const isDoneCell = (t: Task) => showDone && t.completedAt !== undefined
 const byTime = (a: Task[]) => a.sort((x, y) => {
@@ -424,16 +444,9 @@ function calendarCells(list: Task[], days: number): CalCell[] {
   const over: Task[] = []
   const byDay = new Map<number, Task[]>()
   for (const t of list) {
-    // 开关打开时，已完成的任务按**完成那天**归格：它是那天了结的事，
-    // 原来安排在哪天只留在详情栏里（未完成的仍然按安排日期，和以前一样）。
-    // 逾期的判断只对未完成的做 —— 完成那天没有"逾期"这回事
-    if (showDone && t.completedAt !== undefined) {
-      const d = dayStart(t.completedAt)
-      const arr = byDay.get(d) ?? []
-      arr.push(t); byDay.set(d, arr)
-      continue
-    }
-    if (t.startAt === undefined) continue      // 没定日期的挂不到日历上，入口在别的视图
+    // 一律按**原来安排的那天**归格（打过钩的也一样，见上面的说明）。
+    // 没定日期的挂不到日历上，入口在别的视图
+    if (t.startAt === undefined) continue
     const d = dayStart(t.startAt)
     if (d < t0) { over.push(t); continue }
     const arr = byDay.get(d) ?? []
@@ -442,7 +455,7 @@ function calendarCells(list: Task[], days: number): CalCell[] {
   const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
   for (let i = 0; i < days; i++) {
     const d = t0 + i * DAY
-    cells.push({ key: String(d), label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d) ?? []), today: i === 0 })
+    cells.push({ key: String(d), label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d) ?? []), today: i === 0, day: d })
   }
   return cells
 }
@@ -453,6 +466,9 @@ function calendarCells(list: Task[], days: number): CalCell[] {
  * 用户选的就是他要看的那几天，凭空多一格"已逾期"既占了位置、又和"不带逾期"这件事打架
  * （见 pick 里那段）。天数就是选出来的天数，一天不多一天不少 —— 列数不够整行时
  * 最后一行少几个格子，空着就好。
+ *
+ * 「显示已完成」打开后，已完成的任务和 calendarCells 一套规矩：**照样挂在原来安排的那天**，
+ * 所以这里连判断都不需要 —— 打没打过钩都由 pick 决定，归格只看 startAt。
  */
 function customCalCells(list: Task[], r: CalRange): CalCell[] {
   const t0 = today()
@@ -471,7 +487,7 @@ function customCalCells(list: Task[], r: CalRange): CalCell[] {
     // 表头用**绝对日期**（不是 7d/14d 那种"今天/明天"）：这一屏铺的是用户自己选的
     // 一段固定日期，配上一串相对说法反而看不懂自己选的是哪几天了
     cells.push({ key: String(day), label: absDay(day), wd: weekday(day),
-                 items: byTime(byDay.get(day) ?? []), today: day === t0 })
+                 items: byTime(byDay.get(day) ?? []), today: day === t0, day })
   }
   return cells
 }
@@ -746,11 +762,14 @@ function render() {
   const cal = results ? undefined : CAL[view]
   /** 自定义日历：同一屏，但内容由 customRange 决定（没选过范围就是"拖选"那一屏） */
   const custom = !results && view === CAL_CUSTOM
-  // 「显示已完成」只在两个固定日历视图出现：自定义那屏的格子是按用户选的日期铺的，
-  // 完成时间落在哪一天和"他要看的那几天"是两回事，别把它搅进来
-  $('donesw').hidden = !cal
+  /** 自定义日历正在铺格子（不是"拖选范围"那一屏）—— 有格子才有"已完成"可显示 */
+  const customGrid = custom && !pickingDays
+  // 「显示已完成」三个日历视图都有。7d / 14d 的格子是"逾期 + 未来 N 天"，自定义是用户
+  // 自己选的那几天；打开后打过钩的都留在**原来安排的那天**（见 pick / calendarCells /
+  // customCalCells）。搜索结果是普通列表、拖选范围那一屏没有格子，这两处把它收起来
+  $('donesw').hidden = !cal && !customGrid
   setDoneSwitch()
-  $('list').classList.toggle('cal', !!cal || (custom && !pickingDays))
+  $('list').classList.toggle('cal', !!cal || customGrid)
   $('list').classList.toggle('calpicking', custom && pickingDays)
   // 自定义日历的顶栏（范围、列数、翻月）。另外两屏没有这套东西，整块收起来
   const tools = $('caltools') as HTMLElement
@@ -1264,14 +1283,19 @@ function resetPicking() {
  * 不跟标题抢宽度；其余（勾选、点开详情、点标题就地改名、右键菜单）和列表行完全一样 ——
  * 都挂在 .task / .title / [data-act] 上，事件那套代码不用为这个视图分叉。
  *
- * cell 是这行所在的格子：已完成的行按完成那天归格，所以行上给的是**完成时间**
- * （带个 ✓，免得跟原定的时间看混）；逾期那格的未完成任务才需要补上原来的日期。
+ * cell 是这行所在的格子：已完成的行挂在**原来安排的那天**，行上给的是**完成时间**
+ * （带个 ✓，免得跟原定的时间看混）。完成日和这格不是同一天时（提前做完、事后补勾），
+ * 光给钟点看不出是什么时候了结的 —— 那就把完成日期也带上（见下面的 doneDay）。
+ * 逾期那格的未完成任务同理，补的是原来的日期（那格表头只有"已逾期"三个字）。
  */
 function calRow(t: Task, cell: CalCell): string {
   const done = showDone && t.completedAt !== undefined
   const clock = t.startAt !== undefined && !t.isAllDay ? hhmm(t.startAt) : ''
+  // 完成那天（零点）。只有日期相同才省掉日期 —— cell.day 是"这一格是哪天"，
+  // "已逾期"格没有具体哪一天（undefined），所以落在它里面的行一定会把日期写出来
+  const doneDay = t.completedAt !== undefined ? dayStart(t.completedAt) : 0
   const when = done
-    ? `✓ ${hhmm(t.completedAt!)}`
+    ? `✓ ${doneDay !== cell.day ? `${dayLabel(doneDay)} ` : ''}${hhmm(t.completedAt!)}`
     : cell.overdue && t.startAt !== undefined
       // 逾期那一格的表头只有"已逾期"，不带原来的日子就不知道拖了多久（和列表行同理）
       ? [dayLabel(t.startAt), clock].filter(Boolean).join(' ')
@@ -1284,8 +1308,10 @@ function calRow(t: Task, cell: CalCell): string {
   // 进行中：徽标钉在格子右上角，标题给它让出宽度（见 index.html 的 .calrow .tag.doing）。
   // 标题带 title：装不下时被截成一行加省略号，悬浮还能看全
   const prog = t.inProgress ? `<span class="tag doing">${esc(S.inProgress)}</span>` : ''
-  // 开关打开时已完成的行会留在格子里，不该再走"淡出"那套（那是给开关关闭时消失用的）
-  const fading = !showDone && leaving.has(t.id)
+  // 开关打开时已完成的行留在原来的格子里（它挂在原定安排那天，勾完不动），不该走"淡出"
+  // 那套；会消失的只有"排期在今天之前、刚勾完"的那条 —— 它在"已逾期"格里淡出再走（见 pick）
+  const fading = leaving.has(t.id) &&
+    (!showDone || (t.completedAt !== undefined && !!cell.overdue))
   return `<div class="task calrow ${t.completedAt ? 'is-done' : ''} ${t.id === selected ? 'sel' : ''} ${
                t.inProgress ? 'doing' : ''} ${
                t.important ? 'important' : ''} ${
@@ -2364,8 +2390,9 @@ document.addEventListener('click', async (e) => {
 })
 
 /**
- * 日历视图的「显示已完成」开关。打开后格子里还会列出**那天完成**的任务，
- * 行上给的是完成时间、标题划删除线。状态存 ui.json，两个日历视图共用这一个开关。
+ * 日历视图的「显示已完成」开关。打开后格子里还会列出打过钩的任务，它们仍在**原来安排
+ * 的那天**（安排不因为提前做完就挪位置）；行上给的是完成时间、标题划删除线。
+ * 状态存 ui.json，三个日历视图共用这一个开关。
  */
 document.addEventListener('click', async (e) => {
   if (!(e.target as HTMLElement).closest('[data-donesw]')) return
