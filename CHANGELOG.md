@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.8 — 2026-10-01
+
+- The custom calendar now names the span you picked instead of keeping its own name: the heading reads `25 Sep – 7 Oct · 13 days`, counting the days for you, and the line under it drops to just the columns since the dates are already up there. Go back to picking a new range and the heading returns to Calendar (custom) — the old range is still the one in effect until you pick another.
+- 「日历视图（自定义）」选好范围之后，大标题直接报这段日子本身（`9月25日 – 10月7日 共 13 天`），不再挂着「日历视图（自定义）」这个固定名字 —— 一共几天替你数好了，省得对着格子数；日期上了标题，下面那行小字就只剩「5 列」。点「重选范围」时标题退回固定名字：那时旧范围仍然作数，新的还没选出来。
+
 ## 1.11.7 — 2026-10-01
 
 - Clicking an important task no longer turns its row grey — a selected row keeps the same slightly deeper red it shows on hover. Marking a task important now also puts it first on its day, exactly as if you had dragged it there: move it afterwards and it stays where you put it. In the places you cannot reorder by hand — Overdue, Unscheduled, and the calendar's Overdue cell — important tasks float to the top, and the next instance of an important repeating task starts at the top of its day too.

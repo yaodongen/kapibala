@@ -88,11 +88,31 @@ function normRange(a: number, b: number): CalRange {
  */
 const rangeDays = (r: CalRange) => calRangeDays(r)
 const clampRange = (r: CalRange) => clampCalRange(r)
-/** 侧栏副标题：选过就报范围，没选过就说还没选 */
-function customCalSub(): string {
+/**
+ * 这一段范围怎么写给人看：起止两天 + 一共几天（"9月25日 – 10月7日 共 13 天"）。
+ * **大标题和顶栏那段范围文字共用它** —— 只在一处改写法的话，同一段日期会看出两个样子。
+ * 没选过范围（拖选那一屏）时给 null，两处各自退回"还没选"。
+ *
+ * 天数用 rangeDays（= ipc 的 calRangeDays，含头含尾），**别在这儿拿毫秒除 86400000**：
+ * 跨夏令时那天两个零点差 23 小时，除出来会少一天，和"画了几个格子"对不上。
+ */
+function customRangeText(): string | null {
   return customRange
-    ? S.calendarCustomSub(absDay(customRange.from), absDay(customRange.to), customCols)
-    : S.calendarCustomNone
+    ? S.calendarCustomRange(absDay(customRange.from), absDay(customRange.to), rangeDays(customRange))
+    : null
+}
+/**
+ * 自定义日历这一屏的大标题。**铺着格子才报那段日期**（"9月25日 – 10月7日"）；
+ * 拖选那一屏仍然报固定的视图名 —— 原来那段范围此时还作数（拖选时取消掉就回到那段
+ * 日历，见 enterCustomCal），但它已经在顶栏那段范围文字里写着了，标题跟着一起报
+ * 会让人以为"新的已经选好了"。
+ *
+ * pickingDays 是下面才声明的，可 render 只在启动之后才跑（那时早初始化完了），
+ * 所以这里读它没问题。
+ */
+function customCalTitle(): string {
+  const text = pickingDays ? null : customRangeText()
+  return text ?? S[CAL_CUSTOM]
 }
 
 /**
@@ -105,7 +125,10 @@ const VIEWS = [
   { id: 'next30', ico: '▦', sub: () => S.next30Sub },
   { id: 'calendar7',  ico: '▥', sub: () => S.calendar7Sub },
   { id: 'calendar14', ico: '▩', sub: () => S.calendar14Sub },
-  { id: 'calendarCustom', ico: '✥', sub: () => customCalSub() },
+  // 自定义日历的副标题只报列数：那段日期已经写在上面那行大标题上了（见 customCalTitle）。
+  // 拖选那一屏没有列数可言（放几列是选完才定的事），它自己那句"还没选日期范围"就是提示
+  { id: 'calendarCustom', ico: '✥', sub: () => customRange && !pickingDays
+      ? S.calendarCustomSub(customCols) : S.calendarCustomNone },
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
@@ -743,7 +766,12 @@ function render() {
 
   const v = VIEWS.find(x => x.id === view)!
   const results = query.trim() ? searchTasks(alive(), query) : null
-  $('vtitle').textContent = results ? S.searchTitle : S[v.id]
+  /**
+   * 自定义日历选过范围、正铺着格子时，大标题就报那段日期（"9月25日 – 10月7日"），
+   * 不再挂着固定名字 —— 这一屏看的就是这几天，标题报出来最有用。什么时候退回固定
+   * 名字（拖选那一屏、搜索、别的视图）见 customCalTitle。
+   */
+  $('vtitle').textContent = results ? S.searchTitle : (view === CAL_CUSTOM ? customCalTitle() : S[v.id])
   $('vsub').textContent = results ? S.searchSub(query.trim(), results.length) : v.sub()
   ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
   // 清空按钮：只在垃圾桶里、且真有东西可清的时候才出现
@@ -964,9 +992,7 @@ function calTools(): string {
       `</div>${cols}`
   }
   return `<div class="calpick">` +
-    `<span class="calrange">${esc(customRange
-      ? S.calendarCustomSub(absDay(customRange.from), absDay(customRange.to), customCols)
-      : S.calendarCustomNone)}</span>` +
+    `<span class="calrange">${esc(customRangeText() ?? S.calendarCustomNone)}</span>` +
     `<button class="ghost" data-calpick>${esc(S.calendarCustomRedo)}</button>` +
     (customRange ? `<button class="ghost" data-calclear>${esc(S.calendarCustomClear)}</button>` : '') +
     `</div>${cols}`

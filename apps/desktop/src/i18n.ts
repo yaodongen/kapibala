@@ -65,11 +65,16 @@ const ZH = {
   showDoneOn: '显示已完成的任务',
   showDoneOff: '不显示已完成的任务',
   /**
-   * 日历视图（自定义）的范围和列数。范围是用户拖出来的，副标题跟着显示，
-   * 所以是函数而不是写死的一句
+   * 日历视图（自定义）：**选过范围之后，这一屏的大标题就直接报那段日期**，
+   * 不再挂着「日历视图（自定义）」这个固定名字（侧栏那一项仍然是它，好认好点）。
+   * 范围带上总天数（"9月25日 – 10月7日 共 13 天"）—— 标题本来就该报这段有多长，
+   * 免得人对着格子数。副标题因此只剩"每行几列"，日期不重复报。
+   * 范围是用户拖出来的，所以都是函数。
+   * 天数一律用 ipc 的 calRangeDays 算（跨夏令时那天两个零点差 23 小时，自己除毫秒会少一天）。
    */
   calendarCustom: '日历视图（自定义）',
-  calendarCustomSub: (from: string, to: string, cols: number) => `${from} – ${to}，${cols} 列`,
+  calendarCustomRange: (from: string, to: string, days: number) => `${from} – ${to} 共 ${days} 天`,
+  calendarCustomSub: (cols: number) => `${cols} 列`,
   calendarCustomNone: '还没有选日期范围',
   calendarCustomPick: '拖选要看的日期范围',
   calendarCustomPickHint: '用鼠标划过去选起止两天。选完就是这一屏的日历，下次打开还是这几天。',
@@ -239,7 +244,9 @@ const EN: typeof ZH = {
   showDoneOn: 'Show completed tasks',
   showDoneOff: 'Hide completed tasks',
   calendarCustom: 'Calendar (custom)',
-  calendarCustomSub: (from, to, cols) => `${from} – ${to}, ${cols} columns`,
+  /** 英文的日期本来就带月份缩写，"9月25日 – 10月7日 共 13 天"在这儿是 "Sep 25 – Oct 7 · 13 days" */
+  calendarCustomRange: (from, to, days) => `${from} – ${to} · ${days} days`,
+  calendarCustomSub: (cols) => `${cols} columns`,
   calendarCustomNone: 'No date range yet',
   calendarCustomPick: 'Drag to pick the days you want',
   calendarCustomPickHint: 'Drag across the days to set the first and the last one. From then on this view is that calendar, and it stays after a restart.',
