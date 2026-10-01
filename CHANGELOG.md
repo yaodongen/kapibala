@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.7 — 2026-10-01
+
+- Clicking an important task no longer turns its row grey — a selected row keeps the same slightly deeper red it shows on hover. Marking a task important now also puts it first on its day, exactly as if you had dragged it there: move it afterwards and it stays where you put it. In the places you cannot reorder by hand — Overdue, Unscheduled, and the calendar's Overdue cell — important tasks float to the top, and the next instance of an important repeating task starts at the top of its day too.
+- 重要任务点中之后不再变灰：选中那一行是更深一档的红，和悬浮时一样。标记为重要现在还会把它排到那一天最前面（等于替你拖了一次），之后你想拖到哪儿就是哪儿 —— 手排的位置说了算。手排管不着的那几处（已逾期、未安排、日历的已逾期格）重要的一律置顶，重要的周期任务派生出的下一期也从那天第一条开始。
+
 ## 1.11.6 — 2026-09-30
 
 - The "show completed" toggle now belongs to all three calendar views, the custom date range included. Completed tasks stay on **the day they were planned for** instead of moving to the day you ticked them off, so finishing something early no longer shifts it to another cell or makes it vanish from a range that doesn't cover today; within a cell they still sink below the open ones, most recently finished first. When the completion day differs from the day the row sits on, the row now carries that date as well — `✓ 28 Sep 15:00` — so an entry finished early or ticked off later is not mistaken for one finished on its planned day.

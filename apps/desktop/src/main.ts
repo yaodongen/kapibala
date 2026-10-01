@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWat
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
+import { compareOrder, orderBetween, orderKey, spreadOrders } from '@kapibala/core/order'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
 import { DEFAULT_DETAIL_WIDTH, CUSTOM_CAL_COLS, isRestorableView, isViewId, isWinSlot,
          LEGACY_SLOT_KEYS, normCalRange, platformOf, readCalRange, viewSlot, PLATFORM_ARG,
@@ -354,6 +355,52 @@ const write = <T,>(fn: (s: Store) => Promise<T>) => {
   return withLock(s.vault.entry.id, () => fn(s)).then(r => { push(); return r })
 }
 
+/** 本地时区的零点。渲染进程那份是给分组用的；主进程要它，是因为「标记重要」这个动作
+ *  由原生右键菜单发起（见 toggleImportant），而落点得按"哪一天"算 */
+const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
+
+/**
+ * 「标记重要」要连带写的那条 order：**把它插到所在那一天的最前面**，等于替用户拖了一次。
+ *
+ * 为什么不做成"显示时把重要的排前面"：位置得是数据。两台 Mac 上看到的先后、以及用户
+ * 之后自己拖出来的顺序，都只能有一条真相 —— 写进 order 之后，用户想把它拖回下面去就
+ * 真的留在下面（那是他明确表达的意愿，见 app.ts 的 applyCalDrop）。
+ *
+ * 没有日期的不写（"未安排"那一组）：那一组和"已逾期"一样按别的东西排、也拖不动，
+ * 界面直接按「重要」置顶（见 app.ts 的 impFirst）。逾期的照写不误 —— 它在列表里挂在
+ * "已逾期"那一组，可日历里还钉在原来那天，这个 key 决定它在那一格里的位置。
+ */
+function importantOrder(s: Store, id: string): FieldOpIpc[] {
+  const t = s.task(id)
+  if (!t || t.startAt === undefined) return []
+  const day = dayStart(t.startAt)
+  // 那一天里还没做完的那些（不含自己）。已完成的按 order 比没意义 —— 列表里它们根本
+  // 不在这一组，日历里也一律沉底
+  const peers = s.tasks()
+    .filter(x => x.id !== id && !x.deleted && x.completedAt === undefined
+                 && x.startAt !== undefined && dayStart(x.startAt) === day)
+    .sort(compareOrder)
+  const key = orderBetween(null, peers[0]?.order ?? null)
+  // 再也挤不出空位了（老库的 16 位时间戳 key 挨得极近）：按"重要在前"把这一格重铺一遍，
+  // 和拖拽那条路遇到同一情况时的做法一样
+  if (key === null)
+    return spreadOrders([id, ...peers.map(x => x.id)]).map(r => ({ id: r.id, f: 'order', val: r.key }))
+  return [{ id, f: 'order', val: key }]
+}
+
+/**
+ * 切换「重要」。标记上时连带把它排到那一天最前面（见 importantOrder）；取消时**只清标记、
+ * 位置一个字节都不动** —— 它当初是自己跳上去的，现在想挪回去该由用户拖（见 app.ts）。
+ */
+const toggleImportant = (id: string) => write(async s => {
+  const t = s.task(id)
+  if (!t) return
+  const on = !t.important
+  const rows: FieldOpIpc[] = [{ id, f: 'important', val: on }]
+  if (on) rows.push(...importantOrder(s, id))
+  await s.setMany(rows)
+})
+
 /** 包一层：任何 IPC 失败都落盘，否则用户只会说"点了没反应" */
 const handle = (ch: string, fn: (...a: never[]) => unknown) =>
   ipcMain.handle(ch, async (_e, ...args) => {
@@ -400,7 +447,7 @@ handle('task:menu', (id: string) => {
         // 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），和"进行中"那种
         // 临时状态不是一回事，所以放在最前面
         { label: t.important ? L.menuUnimportant : L.menuImportant,
-          click: () => void write(s => s.setField(id, 'important', !t.important)) },
+          click: () => void toggleImportant(id) },
         { label: t.inProgress ? L.unmarkInProgress : L.menuInProgress,
           click: () => void write(s => s.setField(id, 'inProgress', !t.inProgress)) },
         { type: 'separator' },
@@ -563,7 +610,23 @@ handle('task:list', (): Task[] => store?.tasks() ?? [])
 handle('task:create', (d: TaskDraftIpc) => write(s => s.add(d)))
 handle('task:setField', (id: string, f: string, v: unknown) => write(s => s.setField(id, f, v)))
 handle('task:setMany', (rows: FieldOpIpc[]) => write(s => s.setMany(rows)))
-handle('task:complete', (id: string) => write(s => s.complete(id).then(next => next?.id ?? null)))
+handle('task:complete', (id: string) => write(async s => {
+  const next = await s.complete(id)
+  if (!next) return null
+  /**
+   * 派生出来的下一期继承了「重要」：它得和刚标记重要时一样落在那一天最前面，
+   * 否则一条重要的周期任务每一期都从那天最后一行开始。
+   *
+   * 只在它**还带着派生时那个默认位置**时才挪（core 给派生实例的 order 就是
+   * orderKey(createdAt)）。用户已经自己拖过的、或者这期本来就存在（不是新派生的），
+   * order 早不是这个值了 —— 手排的位置不能动。
+   */
+  if (next.important && next.order === orderKey(next.createdAt)) {
+    const rows = importantOrder(s, next.id)
+    if (rows.length) await s.setMany(rows)
+  }
+  return next.id
+}))
 handle('task:uncomplete', (id: string) => write(s => s.uncomplete(id)))
 handle('task:trash', (id: string) => write(s => s.trash(id)))
 handle('task:restore', (id: string) => write(s => s.restore(id)))

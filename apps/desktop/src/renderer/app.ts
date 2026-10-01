@@ -319,6 +319,17 @@ const doneAtOf = (t: Task) => t.completedAt ?? wasDoneAt.get(t.id)
  */
 const byOrder = (a: Task, b: Task) => compareOrder(a, b)
 
+/**
+ * 重要置顶。**只用在"手排管不着"的那几处**：列表的「已逾期」「未安排」，日历的「已逾期」格。
+ * 那几处按的都不是 order（逾期按原定时间、未安排干脆没排过），也拖不动 —— 想让重要的
+ * 任务露头，就剩排序这一条路。
+ *
+ * 按 order 排的那几处（某一天的列表分组、日历的日期格）**不能**套这个：那里的位置归 order
+ * 管，标记重要时已经顺手把 key 写到那一天最前了（见主进程的 importantOrder）。在这儿再压一层，
+ * 用户把一条普通任务拖到重要任务上面就会被当场弹回去 —— 手排的位置必须说了算。
+ */
+const impFirst = (a: Task, b: Task) => Number(!!b.important) - Number(!!a.important)
+
 function pick(v: ViewId): Task[] {
   const t0 = today()
   if (v === 'today') return undone().filter(t => t.startAt !== undefined && t.startAt < t0 + DAY)
@@ -400,13 +411,15 @@ function group(list: Task[], v: ViewId): Group[] {
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
-  // 逾期那一组按原定时间排（最逾期的在最上面）；各天的分组按手排 order，和日历格子一致
-  const byTime = (a: Task[]) => a.sort((x, y) => (x.startAt ?? 0) - (y.startAt ?? 0))
+  // 逾期那一组按原定时间排（最逾期的在最上面），重要的先露头；各天的分组按手排 order，
+  // 和日历格子一致
+  const byTime = (a: Task[]) => a.sort((x, y) => impFirst(x, y) || (x.startAt ?? 0) - (y.startAt ?? 0))
   const out: Group[] = []
   if (over.length) out.push({ label: S.overdue, wd: '', items: byTime(over), overdue: true })
   for (const d of [...byDay.keys()].sort((a, b) => a - b))
     out.push({ label: dayLabel(d), wd: weekday(d), items: byDay.get(d)!.sort(byOrder), day: d })
-  if (none.length) out.push({ label: S.unscheduled, wd: '', items: none })
+  // 未安排那一组没排过序（拖不动、也放不进去），只把重要的顶上去，其余保持原样
+  if (none.length) out.push({ label: S.unscheduled, wd: '', items: none.sort(impFirst) })
   return out
 }
 
@@ -432,12 +445,19 @@ type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?
  * 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
  * 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到。
  * 三个日历视图共用（7d / 14d 和自定义），三处的格子顺序才不会各走各的。
+ *
+ * `imp` 打开"重要置顶"，**只有「已逾期」那一格用**（见 calendarCells）：那格跨好几天，
+ * 手排的 order 在那儿没有可比性、也当不了拖动落点（见上面 byOrder 那段）。日期格里
+ * 不能开 —— 那里的位置归 order 管，开了之后把一条普通任务拖到重要任务上面会被弹回去。
  */
 const isDoneCell = (t: Task) => showDone && t.completedAt !== undefined
-const byTime = (a: Task[]) => a.sort((x, y) => {
+const cellCmp = (imp: boolean) => (x: Task, y: Task) => {
   if (isDoneCell(x) !== isDoneCell(y)) return isDoneCell(x) ? 1 : -1
+  if (imp) { const d = impFirst(x, y); if (d) return d }
   return isDoneCell(x) ? y.completedAt! - x.completedAt! : byOrder(x, y)
-})
+}
+const byTime = (a: Task[]) => a.sort(cellCmp(false))
+const byOverdue = (a: Task[]) => a.sort(cellCmp(true))
 
 function calendarCells(list: Task[], days: number): CalCell[] {
   const t0 = today()
@@ -452,7 +472,7 @@ function calendarCells(list: Task[], days: number): CalCell[] {
     const arr = byDay.get(d) ?? []
     arr.push(t); byDay.set(d, arr)
   }
-  const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byTime(over), overdue: true }]
+  const cells: CalCell[] = [{ key: 'overdue', label: S.overdue, wd: '', items: byOverdue(over), overdue: true }]
   for (let i = 0; i < days; i++) {
     const d = t0 + i * DAY
     cells.push({ key: String(d), label: dayLabel(d), wd: weekday(d), items: byTime(byDay.get(d) ?? []), today: i === 0, day: d })

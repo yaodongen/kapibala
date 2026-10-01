@@ -333,9 +333,13 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
   background:color-mix(in srgb, var(--important) 9%, transparent);
   box-shadow:inset 3px 0 0 var(--important);
 }
-/* 悬浮时把底色加深一档，才看得出鼠标停在这行上。.task:hover 和 .task.important
-   同优先级、靠写在后面才压得过，所以这条必须自己带上 :hover */
-.task.important:hover{ background:color-mix(in srgb, var(--important) 15%, transparent) }
+/* 悬浮 / 选中的底色都加深一档：悬浮时才看得出鼠标停在这行上；**选中（点过的那条）
+   不能退回灰色** —— 那一下看着像"重要的标记没了"。普通行本来就是"悬浮色 = 选中色"
+   （--row-hover），这里同一个比例也算对称。
+   .task:hover 和 .task.important 同优先级、靠写在后面才压得过，所以这条必须自己带上
+   :hover；.task.sel 那条灰底写在更后面，但只有两段，这里三段，压得住 */
+.task.important:hover,
+.task.important.sel{ background:color-mix(in srgb, var(--important) 15%, transparent) }
 
 /* 拖动的插入线。必须写在上面 .doing / .important **之后**：那两行也用 box-shadow
    画左侧竖条，同优先级下后出现的赢 —— 写在前头的话，被拖过的重要任务会把
