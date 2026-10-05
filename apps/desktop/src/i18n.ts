@@ -150,8 +150,6 @@ const ZH = {
   /** 日期分组的标题：8月26日 */
   dayLabel: (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`,
   weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
-  /** 格子里跟在日期后面的周几，缩到最短：放不下"周四"，一个字够认了 */
-  weekdaysTiny: ['日', '一', '二', '三', '四', '五', '六'],
   emptyTrash: '垃圾桶是空的',
   purgeAll: '清空垃圾桶',
   purgeAllAsk: (n: number) => `彻底删除垃圾桶里的 ${n} 个任务？`,
@@ -302,8 +300,6 @@ const EN: typeof ZH = {
   dayYesterday: 'Yesterday',
   dayLabel: (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
   weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-  /** 两个字母就够了，三个字母在窄格里放不下（见上面 weekdaysTiny 的中文说明） */
-  weekdaysTiny: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
   emptyTrash: 'The trash is empty',
   purgeAll: 'Empty trash',
   purgeAllAsk: (n) => `Delete ${n} task${n === 1 ? '' : 's'} in the trash for good?`,

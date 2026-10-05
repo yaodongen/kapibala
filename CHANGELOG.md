@@ -2,6 +2,15 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.11 — 2026-10-05
+
+- **Today** in the calendar views is now marked by an accent-coloured line under the day header that curves up at both ends, with the date and the weekday turning accent-coloured to match. The solid 2px outline and the tinted header block are gone — one line does the job, and it is the separator that was already there.
+- The small count next to the weekday in the continuous calendar shows **only while projection is on**: turn projection off and the header is just the date and the weekday.
+- That weekday is written out in full — `周一`, not a single `一`.
+- 日历三屏的**今天**改成表头底下一道强调色的线：两头顺着圆角往上翘一小段，日期和周几跟着变强调色。原来那圈 2px 实心描边和表头底色都撤了 —— 一道线就够，而且它本来就是表头底下那条分隔线。
+- 连续日历表头那个小条数**只在「推演」开着时报**：关掉推演，表头就只剩日期 + 周几。
+- 表头的周几写全（`周一`），不再是一个字。
+
 ## 1.11.10 — 2026-10-05
 
 - The **Calendar** view is now the **Continuous calendar**: days run one after another with no month blocks at all. Scroll up or down endlessly and it loads more as you reach an edge; each row holds three to seven cells (five by default, picked from the toolbar) and every cell carries its own full date plus the weekday, so a glance tells you which day and which month you are looking at — the toolbar names the month as you scroll. Cells now look exactly like the 7d / 14d ones: same type sizes, same two-line header, no grey background, and the same task rows.

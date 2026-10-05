@@ -181,17 +181,25 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 /* 逾期那格和"今天"那格各给一个颜色，一眼能找到自己站在哪 */
 .calcell.overdue .calhead{ color:var(--danger) }
 .calcell.overdue .calhead .dl{ color:var(--danger) }
-/* 今天那一格：**只把表头那一条点亮**（强调色底 + 一圈描边），格子本体不动。
-   整格染色在一格里堆了十几条任务时太重，一片颜色压着任务，反而看不清；
-   表头这一条既够显眼（扫一眼就知道自己站在哪天），又不跟任务抢注意力。
-   四屏日历共用（.calcell 是它们共同的类）：7d / 14d / 自定义的表头是"今天 周一 12"，
-   连续日历里是"2026-10-01 / 四 3"那两行（同一套 .calhead） */
-.calcell.today .calhead{ background:var(--accent-soft); border-radius:7px;
-                          outline:2px solid var(--accent); outline-offset:-2px }
-/* 表头原本那道分隔线不再叠在描边上（7d / 14d / 自定义有这条线，颜色留成透明，
-   1px 还占着位置，其它格和今天这一格的行高才对得齐） */
-.calcell.today .calhead{ border-bottom-color:transparent }
-.calcell.today .calhead .dl{ color:var(--accent) }
+/* 今天那一格：**只把表头那一条点亮**，格子本体不动。整格染色在一格里堆了十几条任务时
+   太重，一片颜色压着任务，反而看不清；表头这一条既够显眼（扫一眼就知道自己站在哪天），
+   又不跟任务抢注意力。
+   这一版是"表头底下压一道强调色的线"：底色不铺，日期和周几跟着变成强调色。
+   为什么不铺底色：一块色砖压在日期下面，深色主题里还容易发糊；一道线只占 2px，
+   它干的其实就是表头本来就有的那道 border-bottom，只是换成强调色、加重一档 ——
+   分界线还是那条分界线，顺手把"今天"标出来了。
+   2px 是 1px 边框 + 1px 阴影叠出来的，**不能直接写 border-bottom:2px**：
+   那样表头会高 1px，今天这一格底下的任务行跟着比邻格低一像素。
+   **底下两个角要留 7px 圆角**：线两头会顺着圆角往上翘一小段，像一道软笔触；
+   去掉圆角就是一根直杠（`border-bottom:2px` 那种"下划线"）。圆角是这一版的全部意思，
+   别再当成多余的东西删掉 —— 只给下面两个角，上面那两角看不出来（表头没有底色、没有上边框）。
+   三屏日历共用（.calcell 是它们共同的类）：7d / 14d 的表头是"今天 周一 12"，
+   连续日历里是"2026-10-01 / 周一 3"那两行（同一套 .calhead） */
+.calcell.today .calhead{ border-bottom-color:var(--accent);
+                         border-bottom-left-radius:7px; border-bottom-right-radius:7px;
+                         box-shadow:0 1px 0 var(--accent) }
+.calcell.today .calhead .dl,
+.calcell.today .calhead .ws{ color:var(--accent) }
 /* 空的一天：一道极淡的横杠。日历空着很正常，别让人以为这格没画出来 */
 .calempty{ padding:6px 8px; color:var(--dim); opacity:.35; font-size:12px }
 /* ── 拖任务排序 / 改期（日历格子和列表的日期分组共用） ──

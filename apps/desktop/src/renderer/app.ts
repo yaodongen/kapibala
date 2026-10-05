@@ -1033,7 +1033,8 @@ function projRow(p: Proj): string {
  * 同样的 17px 勾选圈、13.5px 标题、同样的元信息写法。
  *
  * 真实任务在前、推演在后：一格里先看"这天真有什么事"，再看"周期任务往后会排到这天"。
- * 表头第二行那个条数也分开报（"3+5" = 3 条真的 + 5 条推演）。
+ * 表头第二行那个条数也分开报（"3+5" = 3 条真的 + 5 条推演），而且**只在推演开着时报** ——
+ * 关掉推演，表头就只剩日期 + 周几（见下面那一段和 projectRepeat）。
  */
 function dayCellHtml(day: number, ctx: CalCtx): string {
   const items = byTime(ctx.byDay.get(day) ?? [])
@@ -1048,11 +1049,15 @@ function dayCellHtml(day: number, ctx: CalCtx): string {
       dow === 0 || dow === 6 ? ' we' : ''}"` +
     ` data-day="${day}" title="${esc(tip)}">` +
     `<div class="calhead"><span class="dl">${esc(S.cellDay(new Date(day)))}</span>` +
-    `<span class="ws"><span class="wd">${esc(S.weekdaysTiny[dow]!)}</span>` +
+    // 周几写全（"周一"），不缩成一个字：这一屏没有周几表头，一个字容易看成一横
+    `<span class="ws"><span class="wd">${esc(weekday(day))}</span>` +
     // 条数紧跟在周几后面（和 14d 同一个位置）：一眼看出"这天还有几条"。
-    // 推演那部分另起一段、压淡一档 —— 它不算这一天的任务
-    `${items.length || projs.length ? `<span class="n">${items.length || ''}${
-      projs.length ? `<span class="pn">+${projs.length}</span>` : ''}</span>` : ''}</span></div>` +
+    // **只在推演开着时报**：这个数是"真实 + 推演"合起来看的（推演那部分压淡一档、
+    // 前面带个 +），不推演的时候光报真实条数就成了纯噪声 —— 几条任务格子里本来就数得清。
+    // 关掉推演，表头就只剩日期 + 周几（见 projectRepeat）
+    `${projectRepeat && (items.length || projs.length)
+      ? `<span class="n">${items.length || ''}${
+        projs.length ? `<span class="pn">+${projs.length}</span>` : ''}</span>` : ''}</span></div>` +
     // 空的一天什么都不画：日历本来就常常是空的，每格都来一道横杠反而吵
     items.map(t => calRow(t, cell)).join('') +
     projs.map(p => projRow(p)).join('') +
