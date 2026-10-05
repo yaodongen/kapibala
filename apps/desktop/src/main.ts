@@ -5,9 +5,9 @@ import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
 import { compareOrder, orderBetween, orderKey, spreadOrders } from '@kapibala/core/order'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
-import { DEFAULT_DETAIL_WIDTH, CUSTOM_CAL_COLS, isRestorableView, isViewId, isWinSlot,
-         LEGACY_SLOT_KEYS, normCalRange, platformOf, readCalRange, viewSlot, PLATFORM_ARG,
-         type CalRange, type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState, type ViewId,
+import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, LEGACY_SLOT_KEYS,
+         normMonthCalCols, platformOf, restorableView, viewSlot, PLATFORM_ARG,
+         type FieldOpIpc, type TaskDraftIpc, type Theme, type VaultState, type ViewId,
          type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
@@ -57,10 +57,13 @@ type UiState = {
    */
   projectRepeat?: boolean
   /**
-   * 日历视图（自定义）选的那段日期和列数。没存过 = 还没选过范围（界面进"拖选"那一屏）。
-   * 范围存的是那两天的零点，和"今天"无关 —— 下次打开看到的就是当初选的那几天
+   * 「连续日历」每行放几个格子，3~7。没存过 = 5（见 ipc 的 MONTH_CAL_COLS）
    */
-  customCalRange?: CalRange
+  monthCalCols?: number
+  /**
+   * 上上版那个"自定义日历"的列数（3~6）。**只读不写**：那一屏撤掉了，但老用户选过
+   * 6 列说明他习惯一行看 6 天，读新键读不到时拿它兜底，设置不至于凭空变回默认
+   */
   customCalCols?: number
   /** 左右两侧栏收起没有。没存过 = 都不收（完整三栏） */
   sidebarCollapsed?: boolean
@@ -85,20 +88,10 @@ function readUi(): UiState {
 function writeUi(ui: UiState) {
   try { writeFileSync(uiFile(), JSON.stringify(ui, null, 2) + '\n') } catch (e) { log('error', '写界面状态失败', e) }
 }
-/**
- * 自定义日历的列数：不是 3~6 的整数（没存过、手改过、旧版本写的）就用默认 5。
- * 夹而不报错 —— 列数只是个摆法，没必要为它把界面卡住。
- */
-function normCalCols(x: unknown): number {
-  const n = Math.round(Number(x))
-  if (!Number.isFinite(n) || n < CUSTOM_CAL_COLS.min || n > CUSTOM_CAL_COLS.max) return CUSTOM_CAL_COLS.def
-  return n
-}
-
 /* ── 窗口大小：按视图分组记 ──
- * 日历铺的是格子，要的地方和列表不一样，所以三个日历视图共用 'calendar' 一份，
+ * 日历铺的是格子，要的地方和列表不一样，所以四个日历视图共用 'calendar' 一份，
  * 其余视图共用 'other'。切视图时主进程负责"先存旧的、再套新的"，用户手动拖的窗口
- * 大小按当前那一屏落盘。三个日历之间不换尺寸 —— 它们都是铺格子，用同一套。
+ * 大小按当前那一屏落盘。几个日历之间不换尺寸 —— 它们都是铺格子，用同一套。
  */
 /** 窗口的最小尺寸，和建窗口时的 minWidth/minHeight 是一个数 */
 const MIN_W = 820, MIN_H = 420
@@ -535,35 +528,21 @@ handle('ui:setProjectRepeat', (on: boolean) => {
 })
 
 /**
- * 日历视图（自定义）的范围和列数。两个值一起给：界面第一屏就要同时用到
- * （有范围才铺格子，铺几列由列数定）。
+ * 「日历视图」（月历）每行放几天。**新键没有就退回旧键**（上一版自定义日历那个 3~6 的
+ * 列数）：老用户选过 6 列说明他习惯一行看 6 天，那一屏撤了不该顺手把他的习惯也清掉。
+ * 旧键只读不写，之后所有的写都只写 monthCalCols。
  *
- * 读回来的范围一律过一遍 readCalRange —— ui.json 是纯文本，可能被手改成任何东西，
- * 超过 36 天的也当没选过（那不是拖出来的，是盘上躺着的怪值）。
+ * 读回来的值一律过一遍 normMonthCalCols —— ui.json 是纯文本，可能被手改成任何东西。
  */
-handle('ui:customCal', () => {
+handle('ui:monthCalCols', () => {
   const ui = readUi()
-  return { range: readCalRange(ui.customCalRange), cols: normCalCols(ui.customCalCols) }
+  return normMonthCalCols(ui.monthCalCols ?? ui.customCalCols)
 })
-/** 记下拖出来的范围。null = 清掉重选（那个字段直接删掉，不留 undefined） */
-handle('ui:setCustomCalRange', (range: CalRange | null) => {
-  const ui = readUi()
-  if (range === null) {
-    delete ui.customCalRange
-    writeUi(ui)
-    return null
-  }
-  // normCalRange 会顺手把超 36 天的夹回来（超一点是拖动过程，不是错误）。
-  // 只有形状根本不对（不是两个数字）才当非法 —— 那说明调用方出了问题
-  const norm = normCalRange(range)
-  if (!norm) throw new Error(`不认识的日期范围：${JSON.stringify(range)}`)
-  writeUi({ ...readUi(), customCalRange: norm })
-  return norm
-})
-handle('ui:setCustomCalCols', (cols: number) => {
-  const n = normCalCols(cols)
+/** 记下列数（3~7）。越界的一律回默认 5 —— 列数只是个摆法，没必要为它把界面卡住 */
+handle('ui:setMonthCalCols', (cols: number) => {
   if (!Number.isFinite(Number(cols))) throw new Error(`不认识的列数：${String(cols)}`)
-  writeUi({ ...readUi(), customCalCols: n })
+  const n = normMonthCalCols(cols)
+  writeUi({ ...readUi(), monthCalCols: n })
   return n
 })
 
@@ -578,7 +557,7 @@ handle('ui:setSidebarCollapsed', (on: boolean) => {
 /**
  * 详情栏收起没有。按视图分组各记一份（其余视图 / 日历，和 winSize 同粒度）——
  * 在日历里把详情栏收起来铺满格子，切回别的列表逛一圈再回来，它还是收着的。
- * 三个日历视图共用日历那一份：都是铺格子看安排，进来就该是同一个样子。
+ * 四个日历视图共用日历那一份：都是铺格子看安排，进来就该是同一个样子。
  * 1.9.x 只存过一个全局布尔，读不到分组值时拿它兜底，老用户的习惯不会凭空变。
  */
 handle('ui:detailCollapsed', (slot: WinSlot) => {
@@ -597,11 +576,9 @@ handle('ui:setDetailCollapsed', (slot: WinSlot, on: boolean) => {
 /**
  * 上次停在哪个列表。存下来的值可能来自旧版本、也可能被手改过，所以只认
  * RESTORABLE_VIEWS 里那几个 —— 读不出来就返回 null，渲染进程退回自己的默认视图。
+ * 撤掉的视图（自定义日历）在这里折算到接替它的那一屏，别让用户的下次打开莫名跳回今天。
  */
-handle('ui:view', () => {
-  const saved = readUi().view
-  return isRestorableView(saved) ? saved : null
-})
+handle('ui:view', () => restorableView(readUi().view))
 /** 切列表就记一笔。已完成 / 垃圾桶不记：那是顺路看一眼的地方，不该变成下次的落脚点 */
 handle('ui:setView', (next: ViewId) => {
   if (!isViewId(next)) throw new Error(`不认识的列表：${String(next)}`)
@@ -697,8 +674,8 @@ function createWindow() {
   // 打开就回到上次那一屏列表（渲染进程 boot() 会跟着落到同一个视图），所以第一屏的尺寸
   // 也用那一屏记下的 —— 否则窗口先按列表大小画出来，等渲染进程报上来再跳一下。
   // 没记过或者记的是已完成 / 垃圾桶，就还是"其余视图"那套尺寸
-  const start = readUi().view
-  winSlot = isRestorableView(start) ? viewSlot(start) : 'other'
+  const start = restorableView(readUi().view)
+  winSlot = start ? viewSlot(start) : 'other'
   const saved = slotKey(readUi().winSize, winSlot)
   const [w, h] = saved ? fitToScreen(saved[0], saved[1]) : [DEFAULT_W, DEFAULT_H]
   const opts: Electron.BrowserWindowConstructorOptions = {

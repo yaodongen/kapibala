@@ -66,9 +66,9 @@ export type Theme = 'light' | 'dark'
 export const DEFAULT_DETAIL_WIDTH = 340
 
 /**
- * 窗口大小按"哪一屏"分开记：**三个日历视图共用 'calendar' 一份**，其余视图共用 'other'。
+ * 窗口大小按"哪一屏"分开记：**四个日历视图共用 'calendar' 一份**，其余视图共用 'other'。
  * 日历铺的是格子，要的地方和列表不一样，用户不用每次切视图都手动拖窗口；
- * 三个日历之间也不分家 —— 都是铺格子，7d 调好了 14d、自定义也该是那个大小。
+ * 几个日历之间也不分家 —— 都是铺格子，7d 调好了月历也该是那个大小。
  */
 export type WinSlot = 'other' | 'calendar'
 export const WIN_SLOTS: readonly WinSlot[] = ['other', 'calendar']
@@ -76,8 +76,8 @@ export const isWinSlot = (x: unknown): x is WinSlot => WIN_SLOTS.includes(x as W
 
 /**
  * 分家时代的旧分组名：日历 7d / 14d 各记过一套窗口大小和详情栏开合。
- * 现在三个日历共用 'calendar'，主进程读偏好时按这张表把旧键折算过来，不让老用户的
- * 设置凭空变回默认（自定义那屏是这次才加进日历组的，旧版本里没有它自己的键）。
+ * 现在四个日历共用 'calendar'，主进程读偏好时按这张表把旧键折算过来，不让老用户的
+ * 设置凭空变回默认。
  * **只读不写**：留着这几个键不碍事，下次改窗口大小自然只会写新的 'calendar'。
  */
 export const LEGACY_SLOT_KEYS: Partial<Record<WinSlot, readonly string[]>> = {
@@ -85,15 +85,15 @@ export const LEGACY_SLOT_KEYS: Partial<Record<WinSlot, readonly string[]>> = {
 }
 
 /**
- * 侧栏那 10 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
+ * 侧栏那 9 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
  * 主进程要用它校验 ui.json 里存下的值（那个文件可能被手改，也可能是旧版本写的，
  * 读回来不能直接当合法视图用），窗口大小也要按视图分组。
  *
- * calendarMonth 是"真正的月历"（一月一块、一周一行、上下无限滚），排在
- * calendarCustom 后面 —— 侧栏顺序就是这一份的顺序（见渲染进程的 VIEWS）。
+ * calendarFlow 是"连续日历"（日子一天接一天铺下去、上下无限滚，每行放几列由用户定）——
+ * 侧栏顺序就是这一份的顺序（见渲染进程的 VIEWS）。
  */
-export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom',
-                         'calendarMonth', 'all', 'done', 'trash'] as const
+export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7', 'calendar14',
+                         'calendarFlow', 'all', 'done', 'trash'] as const
 export type ViewId = typeof VIEW_IDS[number]
 export const isViewId = (x: unknown): x is ViewId => VIEW_IDS.includes(x as ViewId)
 
@@ -102,150 +102,70 @@ export const isViewId = (x: unknown): x is ViewId => VIEW_IDS.includes(x as View
  * 其余视图共用 'other'。渲染进程切视图和主进程建窗口都按这个映射走，别各写一份。
  */
 export const viewSlot = (v: ViewId): WinSlot =>
-  v === 'calendar7' || v === 'calendar14' || v === 'calendarCustom' || v === 'calendarMonth'
-    ? 'calendar' : 'other'
+  v === 'calendar7' || v === 'calendar14' || v === 'calendarFlow' ? 'calendar' : 'other'
 
 /**
  * 值得"下次打开还停在这儿"的列表。已完成和垃圾桶是顺路看一眼就走的地方，
  * 退出时停在那儿不该变成下一次的落脚点 —— 记进去也没用，读的时候当没存过。
  */
 export const RESTORABLE_VIEWS: readonly ViewId[] =
-  ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom', 'calendarMonth', 'all']
+  ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarFlow', 'all']
 export const isRestorableView = (x: unknown): x is ViewId => RESTORABLE_VIEWS.includes(x as ViewId)
 
-/* ── 日历视图（自定义）────
- * 用户自己拖出来的一段日期 + 一个列数。范围是**绝对日期**（那两天的零点），不是
- * "今天起 N 天" —— 选好之后重开应用，看到的还是那几天。
- */
-/** 一段日期范围：起止两天的零点，from ≤ to。渲染进程拖选时算好发上来 */
-export type CalRange = { from: number; to: number }
-
 /**
- * 范围最多几天。超过就不是"日历"了 —— 格子小到看不清，还会把窗口挤爆。
- * 拖选在渲染进程就地卡住（顶栏显示"最多 36 天"），主进程再兜一次底：
- * ui.json 可能被手改，也可能来自旧版本。
- */
-export const CUSTOM_CAL_MAX_DAYS = 36
-/** 自定义日历的列数范围。5 列是默认（一行一周，日历最常见的摆法） */
-export const CUSTOM_CAL_COLS = { min: 3, max: 6, def: 5 } as const
-
-/**
- * 一段范围一共几天（含头含尾）。**用日期加减算，不拿毫秒除 86400000**：
- * 跨夏令时切换那天两个零点差 23 或 25 小时，除出来会少一天或多一天，
- * "36 天上限"就会时松时紧。
- */
-export function calRangeDays(r: CalRange): number {
-  const d = new Date(r.from)
-  d.setHours(0, 0, 0, 0)
-  const end = new Date(r.to)
-  end.setHours(0, 0, 0, 0)
-  let n = 1
-  while (+d < +end && n <= CUSTOM_CAL_MAX_DAYS + 1) { d.setDate(d.getDate() + 1); n++ }
-  return n
-}
-
-/** 超了 36 天就从尾部砍掉，起点不动（同 calRangeDays：日期加减，不碰毫秒） */
-export function clampCalRange(r: CalRange): CalRange {
-  if (calRangeDays(r) <= CUSTOM_CAL_MAX_DAYS) return r
-  const end = new Date(r.from)
-  end.setHours(0, 0, 0, 0)
-  end.setDate(end.getDate() + CUSTOM_CAL_MAX_DAYS - 1)
-  return { from: r.from, to: +end }
-}
-
-/**
- * 把一段来路不明的值收拾成能用的范围：形状不对（不是两个数字）返回 null，
- * **形状对但超了 36 天就夹到 36 天**（不返回 null）。
+ * 撤掉的视图：老用户的 ui.json 里还可能存着它。读的时候折算到接替它的那一屏 ——
+ * 直接当"没存过"的话，下一次打开会莫名跳回「今天」，用户只会觉得"我的设置丢了"。
+ * 和 LEGACY_SLOT_KEYS 一个规矩：**只读不写**，之后所有的写都只写新的 id。
  *
- * 为什么超限要夹而不是拒：用户拖选时来回拖过界很常见（先划一大片再收回来），
- * 超一点是过程而不是错误 —— 拒掉会让"明明选好了一段却什么都没存下"。
- * 真正看不懂的形状（手改过的 ui.json、旧版本写的东西）才当没选过。
+ * 撤过的两个：
+ *   calendarCustom —— 用户拖一段固定日期、一月一块地看。它那点诉求「格子别太挤」
+ *     现在是连续日历的列数（见 MONTH_CAL_COLS），「看某一段日子」直接滚过去。
+ *   calendarMonth —— 就是这同一屏的上一个名字（当时是"一月一块的真月历"，
+ *     现在改成一天接一天、不分月了，所以连 id 一起换掉）。
  */
-export function normCalRange(x: unknown): CalRange | null {
-  if (!x || typeof x !== 'object') return null
-  const { from, to } = x as CalRange
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return null
-  const a = new Date(from), b = new Date(to)
-  a.setHours(0, 0, 0, 0)
-  b.setHours(0, 0, 0, 0)
-  const [lo, hi] = +a <= +b ? [+a, +b] : [+b, +a]
-  return clampCalRange({ from: lo, to: hi })
+export const LEGACY_VIEW_IDS: Readonly<Record<string, ViewId>> = {
+  calendarCustom: 'calendarFlow',
+  calendarMonth: 'calendarFlow',
 }
+/** 从盘上读回来的视图 id：认得的就用，撤掉的折算，别的一律 null（当没存过） */
+export function restorableView(x: unknown): ViewId | null {
+  if (isRestorableView(x)) return x
+  return typeof x === 'string' ? LEGACY_VIEW_IDS[x] ?? null : null
+}
+
+/* ── 「日历视图」（月历）每行放几天 ────
+ * 这一屏原来固定 7 列（周一到周日），1110 宽的窗口下每格只剩六十几像素，标题只剩两三个字。
+ * 现在列数由用户定：**5 列是默认** —— 那个宽度下每格还有 90 多像素，小屏幕上标题读得全；
+ * 7 列是"一周一行"的传统月历（只有 7 列才对得齐周一到周日，见渲染进程的 dayCellHtml）。
+ * 存在 ui.json 里，是本机的界面偏好，不进库目录、不跟 iCloud 同步。
+ */
+export const MONTH_CAL_COLS = { min: 3, max: 7, def: 5 } as const
 
 /**
- * 从 ui.json 读回来的一段范围：除了形状要对，**超过 36 天的也当没选过**（返回 null）。
- *
- * 和 normCalRange 的区别就在这儿：那个是"用户正在给我的值"（超了夹一下就好），
- * 这个是"盘上躺着的一段值"—— 它超限说明要么被手改过、要么是别的版本写的，
- * 与其照它铺一屏荒唐的格子，不如让用户重新选一次。
- *
- * 判断办法是"夹过没有"：normCalRange 会把超限的砍短，砍短了就说明原来是超的。
- * 别直接比较 from/to 的数值 —— 它还会顺手排序，倒着存的那份是正常的。
+ * 盘上读回来的列数：不是 3~7 的整数（没存过、手改过、旧版本写的）就用默认 5。
+ * **夹而不报错** —— 列数只是个摆法，没必要为它把界面卡住。
  */
-export function readCalRange(x: unknown): CalRange | null {
-  if (!x || typeof x !== 'object') return null
-  const { from, to } = x as CalRange
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return null
-  const a = new Date(from), b = new Date(to)
-  a.setHours(0, 0, 0, 0)
-  b.setHours(0, 0, 0, 0)
-  const [lo, hi] = +a <= +b ? [+a, +b] : [+b, +a]
-  // 先量天数再决定要不要夹 —— 反过来的话量到的永远是夹过之后的 36 天，
-  // 这道"盘上的值超限就当没选过"的关卡就等于没有（踩过一次）
-  return calRangeDays({ from: lo, to: hi }) <= CUSTOM_CAL_MAX_DAYS ? { from: lo, to: hi } : null
+export function normMonthCalCols(x: unknown): number {
+  const n = Math.round(Number(x))
+  return Number.isFinite(n) && n >= MONTH_CAL_COLS.min && n <= MONTH_CAL_COLS.max
+    ? n : MONTH_CAL_COLS.def
 }
 
-/* ── 月历（「日历视图」）的月份算术 ────
- * 月历是"一月一块、一周一行"铺出来的：要知道某个月从哪天画起、画几周。
- * 这两件事都是纯算术，而且是最容易踩坑的地方（月份长度不一样、跨年、闰年），
- * 所以放在这儿带单测，渲染进程的月历和拖选屏的时间轴共用同一份 —— 两处的
- * 月首位置才不会各算各的。一周一律从**周一**开头（和拖选时间轴一致）。
+/* ── 日期算术 ────
+ * 连续日历是"一天接一天"铺出来的，往前/往后接也是按天算 —— 所以这里只需要"某天加减几天"。
+ * （原来那套"月序号 / 这个月几号起画 / 画几周"是给"一月一块的真月历"用的，那一屏已经改成
+ * 连续排了，用不上，连单测一起删掉。要再捡回来：git log 里搜 monthWeekStart。）
  */
 
 /**
- * 某一天是"第几个月"：年 × 12 + 月。月份加减一律走它，**不要拿某个月的日期去 setMonth**：
- * 月份长度不一样，`new Date(2026, 6, 31).setMonth(5)`（退到 6 月）会溢出成 7 月 1 日
- * （6 月没有 31 号）—— 结果是"往前退一个月"原地不动。踩过：时间轴把同一个 7 月插了 15 遍。
+ * 某天往后（往前就是负数）n 天的零点。**用日期加减，不拿毫秒乘**：
+ * 跨夏令时切换那天两个零点差 23 或 25 小时，加 86400000 会落到前一天 23 点或后一天 1 点。
  */
-export const monthNo = (ts: number): number => {
+export function addDays(ts: number, n: number): number {
   const d = new Date(ts)
-  return d.getFullYear() * 12 + d.getMonth()
-}
-/** 一个月的 1 号（零点）就是这个月的代表 */
-export const monthFirst = (ts: number): number => {
-  const d = new Date(ts)
-  d.setDate(1)
+  d.setDate(d.getDate() + n)
   d.setHours(0, 0, 0, 0)
   return +d
-}
-/** 月序号 → 那个月 1 号的零点。月份序号可能是负的（往前退到 1970 年之前），取模要兜住 */
-export const monthAt = (no: number): number =>
-  +new Date(Math.floor(no / 12), ((no % 12) + 12) % 12, 1)
-
-/**
- * 月序号 → 这个月的格子从哪天画起：**1 号所在那一周的周一**（零点）。
- * 周一开头（周一是 1，周日是 0），所以 1 号是周一时不退，是周日时要往回退 6 天。
- */
-export function monthWeekStart(no: number): number {
-  const first = monthAt(no)
-  const d = new Date(first)
-  d.setDate(1 - ((new Date(first).getDay() + 6) % 7))
-  return +d
-}
-
-/**
- * 月序号 → 这个月要画几周（4~6 周）。跨到相邻月的那几天也要把整周铺满，
- * 所以是"月初前面补几天 + 这个月几天"，再向上取整到整周。
- *
- * 天数用 `new Date(y, m + 1, 0).getDate()` 取（下个月 0 号 = 这个月最后一天），
- * 闰年和月份长度都由它管，别自己列 30/31 的表。
- */
-export function monthWeeks(no: number): number {
-  const first = monthAt(no)
-  const d = new Date(first)
-  const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
-  const lead = (d.getDay() + 6) % 7
-  return Math.ceil((lead + days) / 7)
 }
 
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
@@ -289,7 +209,7 @@ export type Commands = {
   /**
    * 日历视图要不要显示已完成的任务。默认关 —— 日历首先是看安排的，
    * 已完成的不该一上来就把格子占满。打过钩的仍然挂在**原来安排的那天**，
-   * 不是完成那天。这是本机的界面偏好，三个日历视图共用（7d / 14d / 自定义）
+   * 不是完成那天。这是本机的界面偏好，四个日历视图共用（7d / 14d / 月历）
    */
   'ui:showDone': () => boolean
   /** 记下这个开关。返回存进去的值 */
@@ -303,14 +223,13 @@ export type Commands = {
   /** 记下这个开关。返回存进去的值 */
   'ui:setProjectRepeat': (on: boolean) => boolean
   /**
-   * 日历视图（自定义）选的那段日期 + 列数。没选过范围就是 null —— 界面据此进入
-   * "拖选范围"那一屏。和 showDone 一样是本机的界面偏好：不进库目录、不跟 iCloud 同步
+   * 「日历视图」（月历）每行放几天。没存过 = 5（见 MONTH_CAL_COLS）。
+   * 和 showDone 一样是本机的界面偏好：不进库目录、不跟 iCloud 同步。
+   * 旧版本那个自定义日历的 customCalCols 可能还躺在盘上，读的时候拿它兜底（见 main.ts）
    */
-  'ui:customCal': () => { range: CalRange | null; cols: number }
-  /** 记下拖出来的范围（传 null = 清掉重选）。返回真正存进去的值，越界的一律夹回来 */
-  'ui:setCustomCalRange': (range: CalRange | null) => CalRange | null
-  /** 记下列数（3~6）。返回真正存进去的值 */
-  'ui:setCustomCalCols': (cols: number) => number
+  'ui:monthCalCols': () => number
+  /** 记下列数（3~7）。返回真正存进去的值，越界的一律回默认 5 */
+  'ui:setMonthCalCols': (cols: number) => number
   /**
    * 左右两侧栏收起没有。收起是为了把任务列表 / 日历铺满（专注看安排），
    * 默认都不收。和详情栏宽度一样是本机的界面偏好：不进库目录、不跟 iCloud 同步
@@ -360,7 +279,7 @@ export const CHANNELS = [
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
   'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone',
   'ui:projectRepeat', 'ui:setProjectRepeat',
-  'ui:customCal', 'ui:setCustomCalRange', 'ui:setCustomCalCols',
+  'ui:monthCalCols', 'ui:setMonthCalCols',
   'ui:sidebarCollapsed', 'ui:setSidebarCollapsed', 'ui:detailCollapsed', 'ui:setDetailCollapsed',
   'ui:view', 'ui:setView',
   'window:switch', 'app:version',

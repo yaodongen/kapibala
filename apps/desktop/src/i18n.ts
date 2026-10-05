@@ -21,6 +21,14 @@ const shortcut = (p: Platform) => (p === 'darwin' ? '⌘↩' : 'Ctrl+Enter')
 const fileManager = (p: Platform) => (p === 'darwin' ? 'Finder' : '文件资源管理器')
 
 /**
+ * 连续日历格子上那个完整日期：2026-10-01。中英文共用这一个写法 ——
+ * 格子只有几十像素宽，"10月1日 / Oct 1"都写不下，而没有年份就认不出这是哪一年
+ * （这一屏能一路滚到几年前、几年后）。数字写法在两种语言里都读得通。
+ */
+const cellDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/**
  * 按平台变的那几句统一放这里（两边语言各一份，形状由 EN: typeof ZH 卡住）。
  * 单列一处有两个好处：写新句子时一眼看到"这一句两个平台都得有说法"，
  * 以及 i18n.test.ts 能把这一组**自动**在两个平台上各过一遍 —— 加句子不用改测试。
@@ -74,34 +82,22 @@ const ZH = {
   /** 推演出来的行、以及格子上那个"几条真实 + 几条推演"里的标记 */
   projectTag: '推演',
   /**
-   * 日历视图（自定义）：**选过范围之后，这一屏的大标题就直接报那段日期**，
-   * 不再挂着「日历视图（自定义）」这个固定名字（侧栏那一项仍然是它，好认好点）。
-   * 范围带上总天数（"9月25日 – 10月7日 共 13 天"）—— 标题本来就该报这段有多长，
-   * 免得人对着格子数。副标题因此只剩"每行几列"，日期不重复报。
-   * 范围是用户拖出来的，所以都是函数。
-   * 天数一律用 ipc 的 calRangeDays 算（跨夏令时那天两个零点差 23 小时，自己除毫秒会少一天）。
+   * 「连续日历」每行放几列。3~7 任选、默认 5（见 ipc 的 MONTH_CAL_COLS）——
+   * 5 列是"小屏幕上日期还读得全"的那一档。列数只改一行摆几个格子，不改这一屏看的是哪些天。
    */
-  calendarCustom: '日历视图（自定义）',
-  calendarCustomRange: (from: string, to: string, days: number) => `${from} – ${to} 共 ${days} 天`,
-  calendarCustomSub: (cols: number) => `${cols} 列`,
-  calendarCustomNone: '还没有选日期范围',
-  calendarCustomPick: '拖选要看的日期范围',
-  calendarCustomPickHint: '用鼠标划过去选起止两天。选完就是这一屏的日历，下次打开还是这几天。',
-  calendarCustomPicked: (n: number) => `已选 ${n} 天`,
-  calendarCustomMax: (n: number) => `最多 ${n} 天，已经卡住了`,
-  calendarCustomCols: (n: number) => `${n} 列`,
-  calendarCustomLayout: '每行放几列',
-  calendarCustomRedo: '重选范围',
-  calendarCustomClear: '清空范围',
+  calendarCols: (n: number) => `${n} 列`,
+  calendarColsLabel: '每行放几列',
+  /** 格子角上那个完整日期（2026-10-01）：这一屏不分月，格子的身份全靠它 */
+  cellDay: cellDate,
   /**
-   * 「日历视图」—— 真正的月历：一月一块、一周一行（周一到周日），上下无限滚。
-   * 名字就用最朴素的那个（旁边的 7d / 14d / 自定义都带括号说明范围，这一屏不用——
-   * 它本来就是"日历该有的样子"）。副标题一句话说清它和自定义那屏的区别：
-   * 自定义是一次拖出一段固定日子，这一屏是一直往前/往后滚。
+   * 「连续日历」—— 日子一天接一天铺下去、上下无限滚的那一屏。**不分月**：
+   * 没有"一月一块"，哪一天是几月几号由每格自己那串完整日期说（见 cellDay）。
+   * 名字就按这个概念取，别叫"日历视图"——旁边 7d / 14d 已经占着"日历视图"这个前缀了，
+   * 而这一屏跟"一个月"没有关系。
    */
-  calendarMonth: '日历视图',
-  calendarMonthSub: '一月一块，上下滚动看前后几个月',
-  /** 月历顶栏那枚按钮：滚到几年以外之后一键回到今天那一行 */
+  calendarFlow: '连续日历',
+  calendarFlowSub: '一天接一天排下去，上下滚动看前后',
+  /** 连续日历顶栏那枚按钮：滚到几年以外之后一键回到今天那一格 */
   calendarToday: '回到今天',
   /**
    * 收起/展开两侧栏的按钮提示。和主题开关一样写"点了会变成什么"：
@@ -153,13 +149,9 @@ const ZH = {
   dayYesterday: '昨天',
   /** 日期分组的标题：8月26日 */
   dayLabel: (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`,
-  /**
-   * 拖选时间轴里格子上那个日期：**数字写法**。
-   * 那一屏一行七格、格子只有五六十像素宽，"10月10日"这种写法会折成两行；
-   * 数字写法更短，而且和左边那列"月/日"的顺序读起来一致
-   */
-  dayShort: (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`,
   weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
+  /** 格子里跟在日期后面的周几，缩到最短：放不下"周四"，一个字够认了 */
+  weekdaysTiny: ['日', '一', '二', '三', '四', '五', '六'],
   emptyTrash: '垃圾桶是空的',
   purgeAll: '清空垃圾桶',
   purgeAllAsk: (n: number) => `彻底删除垃圾桶里的 ${n} 个任务？`,
@@ -265,21 +257,11 @@ const EN: typeof ZH = {
   projectOn: 'Project future repeats onto the calendar',
   projectOff: 'Stop projecting future repeats',
   projectTag: 'Projected',
-  calendarCustom: 'Calendar (custom)',
-  /** 英文的日期本来就带月份缩写，"9月25日 – 10月7日 共 13 天"在这儿是 "Sep 25 – Oct 7 · 13 days" */
-  calendarCustomRange: (from, to, days) => `${from} – ${to} · ${days} days`,
-  calendarCustomSub: (cols) => `${cols} columns`,
-  calendarCustomNone: 'No date range yet',
-  calendarCustomPick: 'Drag to pick the days you want',
-  calendarCustomPickHint: 'Drag across the days to set the first and the last one. From then on this view is that calendar, and it stays after a restart.',
-  calendarCustomPicked: (n) => `${n} day${n === 1 ? '' : 's'} selected`,
-  calendarCustomMax: (n) => `${n} days max, that is the whole span`,
-  calendarCustomCols: (n) => `${n} columns`,
-  calendarCustomLayout: 'Columns per row',
-  calendarCustomRedo: 'Pick a new range',
-  calendarCustomClear: 'Clear the range',
-  calendarMonth: 'Calendar',
-  calendarMonthSub: 'One block per month — scroll up or down for more',
+  calendarCols: (n) => `${n} columns`,
+  calendarColsLabel: 'Columns per row',
+  cellDay: cellDate,
+  calendarFlow: 'Continuous calendar',
+  calendarFlowSub: 'One day after another — scroll up or down for more',
   calendarToday: 'Back to today',
   sidebarCollapseTip: 'Hide the sidebar and focus on the tasks',
   sidebarExpandTip: 'Show the sidebar',
@@ -319,8 +301,9 @@ const EN: typeof ZH = {
   dayTomorrow: 'Tomorrow',
   dayYesterday: 'Yesterday',
   dayLabel: (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-  dayShort: (d) => `${d.getMonth() + 1}/${d.getDate()}`,
   weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  /** 两个字母就够了，三个字母在窄格里放不下（见上面 weekdaysTiny 的中文说明） */
+  weekdaysTiny: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
   emptyTrash: 'The trash is empty',
   purgeAll: 'Empty trash',
   purgeAllAsk: (n) => `Delete ${n} task${n === 1 ? '' : 's'} in the trash for good?`,

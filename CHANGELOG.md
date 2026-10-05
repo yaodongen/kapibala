@@ -2,6 +2,13 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.10 — 2026-10-05
+
+- The **Calendar** view is now the **Continuous calendar**: days run one after another with no month blocks at all. Scroll up or down endlessly and it loads more as you reach an edge; each row holds three to seven cells (five by default, picked from the toolbar) and every cell carries its own full date plus the weekday, so a glance tells you which day and which month you are looking at — the toolbar names the month as you scroll. Cells now look exactly like the 7d / 14d ones: same type sizes, same two-line header, no grey background, and the same task rows.
+- **Calendar (custom)** is gone. Everything it was for is covered here: keeping cells from being cramped on a small screen is now the columns-per-row setting, and the span you used to pick as a range is simply a scroll away. An `ui.json` that still says `calendarCustom`, or `calendarMonth` (this view's previous name), opens this one instead.
+- 「日历视图」改成「**连续日历**」：**不分月**，日子一天接一天铺下去 —— 上下无限滚动，滚到边就自动往下接。每行放 3~7 个格子（默认 5，顶栏可选），每格自带完整日期和周几，扫一眼就知道这是哪天、哪个月；顶栏那行字跟着滚动报当前月份。格子的字号、两行式表头（日期一行、周几和条数一行）和背景都改成了和「日历视图（7d / 14d）」一模一样，任务行也是同一套。
+- 撤掉「日历视图（自定义）」：它要的东西这一屏全有了 —— 「格子别太挤」是每行几列（3~7，默认 5），「看某一段日子」滚过去就是。以前存过自定义日历（`ui.json` 里的 `calendarCustom`）、或者这一屏的上一个名字（`calendarMonth`），下次打开都落到这里。
+
 ## 1.11.9 — 2026-10-05
 
 - New **Calendar** view: a real month calendar — one block per month, one week per row (Monday first), scrolling endlessly in both directions. It opens with three months either side of today and loads more as you reach an edge, lands on today's row, and the toolbar names the month you are looking at and offers **Back to today**. The "today" highlight is now just the day header strip rather than the whole cell, the same in all four calendar views.
