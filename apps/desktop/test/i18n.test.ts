@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { VIEW_IDS } from '@kapibala/ipc'
 import { LANGS, isLang, langOf, t, type Strings } from '../src/i18n.ts'
 
 const CJK = /[一-鿿]/
@@ -75,9 +76,11 @@ describe('两份文案', () => {
   })
 
   it('视图名和视图 id 对得上（render() 直接按 id 取名字）', () => {
+    // 列表从 ipc 的 VIEW_IDS 来，**不加在这儿写死**：新增一个视图，
+    // 名字或副标题漏写一条，这条测试就会当场抓住
     for (const lang of LANGS) {
       const S = t(lang)
-      for (const id of ['today', 'next7', 'calendar7', 'calendar14', 'calendarCustom', 'next30', 'all', 'done', 'trash'] as const) {
+      for (const id of VIEW_IDS) {
         expect(typeof S[id]).toBe('string')
         expect(typeof S[`${id}Sub` as 'next7Sub']).not.toBe('undefined')
       }

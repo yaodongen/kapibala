@@ -1,6 +1,6 @@
 {
   "name": "kapibala-desktop",
-  "version": "1.11.8",
+  "version": "1.11.9",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {

@@ -52,6 +52,11 @@ type UiState = {
   /** 日历视图是否显示"当天已完成"的任务。没存过 = 关 */
   showDone?: boolean
   /**
+   * 日历视图是否推演周期任务的未来安排（「每天读书」往后排在哪几天，置灰只读）。
+   * 没存过 = **开**：这是这一屏的默认看点，关过一次才记住关
+   */
+  projectRepeat?: boolean
+  /**
    * 日历视图（自定义）选的那段日期和列数。没存过 = 还没选过范围（界面进"拖选"那一屏）。
    * 范围存的是那两天的零点，和"今天"无关 —— 下次打开看到的就是当初选的那几天
    */
@@ -515,6 +520,17 @@ handle('ui:showDone', () => readUi().showDone === true)
 handle('ui:setShowDone', (on: boolean) => {
   if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
   writeUi({ ...readUi(), showDone: on })
+  return on
+})
+
+/**
+ * 日历视图要不要"推演"周期任务。**默认开**，所以判断是 `!== false` 而不是 `=== true` ——
+ * 没存过（新用户、老 ui.json）都得是开着的，只有明确关过才关。
+ */
+handle('ui:projectRepeat', () => readUi().projectRepeat !== false)
+handle('ui:setProjectRepeat', (on: boolean) => {
+  if (typeof on !== 'boolean') throw new Error(`不认识的开关值：${String(on)}`)
+  writeUi({ ...readUi(), projectRepeat: on })
   return on
 })
 

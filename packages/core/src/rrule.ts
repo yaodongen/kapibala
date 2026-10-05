@@ -173,6 +173,32 @@ export function nextAfter(rule: Rrule, anchorMs: number, afterMs: number): numbe
   return null
 }
 
+/**
+ * anchor 之后、落在 [fromMs, toMs] 这一段里的所有发生时刻（含两端），最多 limit 个。
+ * 日历视图拿它做"推演"：一条"每天读书 20 分钟"往后会排在哪几天。
+ *
+ * **从 fromMs 那一天的起始处开始扫**，不是从 anchor 起一期期数过来：一个两年前就该做、
+ * 一直没勾的每日任务，anchor 在两年前，一期期数要白扫七百多轮；从 from 起扫，花的时间
+ * 只跟"这一段里有几期"有关。这也是为什么要单独收这个参数，而不是让调用方自己循环。
+ *
+ * 时刻一律跟 anchor 的时、分、秒走（nextAfter 的规矩），所以同一条规则推出来的每一期
+ * 都落在同一个钟点上，跨夏令时也不会漂。
+ */
+export function occurrencesBetween(rule: Rrule, anchorMs: number, fromMs: number, toMs: number,
+                                   limit = 400): number[] {
+  const out: number[] = []
+  if (toMs < fromMs) return out
+  // nextAfter 要的是"严格大于"的时刻，所以减 1ms：正好落在 fromMs 上的那一期才算得进来
+  let cursor = Math.max(anchorMs, fromMs - 1)
+  while (out.length < limit) {
+    const at = nextAfter(rule, anchorMs, cursor)
+    if (at === null || at > toMs) break
+    out.push(at)
+    cursor = at
+  }
+  return out
+}
+
 /** 界面语言。拿不准的语言一律按中文，见 apps/desktop/src/i18n.ts 的 langOf */
 export type Lang = 'zh' | 'en'
 

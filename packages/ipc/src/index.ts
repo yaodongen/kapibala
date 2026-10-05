@@ -85,27 +85,32 @@ export const LEGACY_SLOT_KEYS: Partial<Record<WinSlot, readonly string[]>> = {
 }
 
 /**
- * 侧栏那 9 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
+ * 侧栏那 10 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
  * 主进程要用它校验 ui.json 里存下的值（那个文件可能被手改，也可能是旧版本写的，
  * 读回来不能直接当合法视图用），窗口大小也要按视图分组。
+ *
+ * calendarMonth 是"真正的月历"（一月一块、一周一行、上下无限滚），排在
+ * calendarCustom 后面 —— 侧栏顺序就是这一份的顺序（见渲染进程的 VIEWS）。
  */
-export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom', 'all', 'done', 'trash'] as const
+export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom',
+                         'calendarMonth', 'all', 'done', 'trash'] as const
 export type ViewId = typeof VIEW_IDS[number]
 export const isViewId = (x: unknown): x is ViewId => VIEW_IDS.includes(x as ViewId)
 
 /**
- * 视图 → 窗口大小分组。三个日历视图共用 'calendar'（大小、详情栏开合都共享一份），
+ * 视图 → 窗口大小分组。四个日历视图共用 'calendar'（大小、详情栏开合都共享一份），
  * 其余视图共用 'other'。渲染进程切视图和主进程建窗口都按这个映射走，别各写一份。
  */
 export const viewSlot = (v: ViewId): WinSlot =>
-  v === 'calendar7' || v === 'calendar14' || v === 'calendarCustom' ? 'calendar' : 'other'
+  v === 'calendar7' || v === 'calendar14' || v === 'calendarCustom' || v === 'calendarMonth'
+    ? 'calendar' : 'other'
 
 /**
  * 值得"下次打开还停在这儿"的列表。已完成和垃圾桶是顺路看一眼就走的地方，
  * 退出时停在那儿不该变成下一次的落脚点 —— 记进去也没用，读的时候当没存过。
  */
 export const RESTORABLE_VIEWS: readonly ViewId[] =
-  ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom', 'all']
+  ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarCustom', 'calendarMonth', 'all']
 export const isRestorableView = (x: unknown): x is ViewId => RESTORABLE_VIEWS.includes(x as ViewId)
 
 /* ── 日历视图（自定义）────
@@ -190,6 +195,59 @@ export function readCalRange(x: unknown): CalRange | null {
   return calRangeDays({ from: lo, to: hi }) <= CUSTOM_CAL_MAX_DAYS ? { from: lo, to: hi } : null
 }
 
+/* ── 月历（「日历视图」）的月份算术 ────
+ * 月历是"一月一块、一周一行"铺出来的：要知道某个月从哪天画起、画几周。
+ * 这两件事都是纯算术，而且是最容易踩坑的地方（月份长度不一样、跨年、闰年），
+ * 所以放在这儿带单测，渲染进程的月历和拖选屏的时间轴共用同一份 —— 两处的
+ * 月首位置才不会各算各的。一周一律从**周一**开头（和拖选时间轴一致）。
+ */
+
+/**
+ * 某一天是"第几个月"：年 × 12 + 月。月份加减一律走它，**不要拿某个月的日期去 setMonth**：
+ * 月份长度不一样，`new Date(2026, 6, 31).setMonth(5)`（退到 6 月）会溢出成 7 月 1 日
+ * （6 月没有 31 号）—— 结果是"往前退一个月"原地不动。踩过：时间轴把同一个 7 月插了 15 遍。
+ */
+export const monthNo = (ts: number): number => {
+  const d = new Date(ts)
+  return d.getFullYear() * 12 + d.getMonth()
+}
+/** 一个月的 1 号（零点）就是这个月的代表 */
+export const monthFirst = (ts: number): number => {
+  const d = new Date(ts)
+  d.setDate(1)
+  d.setHours(0, 0, 0, 0)
+  return +d
+}
+/** 月序号 → 那个月 1 号的零点。月份序号可能是负的（往前退到 1970 年之前），取模要兜住 */
+export const monthAt = (no: number): number =>
+  +new Date(Math.floor(no / 12), ((no % 12) + 12) % 12, 1)
+
+/**
+ * 月序号 → 这个月的格子从哪天画起：**1 号所在那一周的周一**（零点）。
+ * 周一开头（周一是 1，周日是 0），所以 1 号是周一时不退，是周日时要往回退 6 天。
+ */
+export function monthWeekStart(no: number): number {
+  const first = monthAt(no)
+  const d = new Date(first)
+  d.setDate(1 - ((new Date(first).getDay() + 6) % 7))
+  return +d
+}
+
+/**
+ * 月序号 → 这个月要画几周（4~6 周）。跨到相邻月的那几天也要把整周铺满，
+ * 所以是"月初前面补几天 + 这个月几天"，再向上取整到整周。
+ *
+ * 天数用 `new Date(y, m + 1, 0).getDate()` 取（下个月 0 号 = 这个月最后一天），
+ * 闰年和月份长度都由它管，别自己列 30/31 的表。
+ */
+export function monthWeeks(no: number): number {
+  const first = monthAt(no)
+  const d = new Date(first)
+  const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  const lead = (d.getDay() + 6) % 7
+  return Math.ceil((lead + days) / 7)
+}
+
 /** 一条命令对应存储层的一条或几条 op。字段会一直加，所以不给每个字段发明命令 */
 export type Commands = {
   'vault:state': () => VaultState
@@ -236,6 +294,14 @@ export type Commands = {
   'ui:showDone': () => boolean
   /** 记下这个开关。返回存进去的值 */
   'ui:setShowDone': (on: boolean) => boolean
+  /**
+   * 日历视图要不要"推演"周期任务：把「每天读书 20 分钟」这类固定周期任务**未来会排到
+   * 哪几天**也画在格子里（置灰、只读，不是任务）。默认开。只是本机的界面偏好，
+   * 和 showDone 一样存 ui.json，不进库目录、不跟 iCloud 同步
+   */
+  'ui:projectRepeat': () => boolean
+  /** 记下这个开关。返回存进去的值 */
+  'ui:setProjectRepeat': (on: boolean) => boolean
   /**
    * 日历视图（自定义）选的那段日期 + 列数。没选过范围就是 null —— 界面据此进入
    * "拖选范围"那一屏。和 showDone 一样是本机的界面偏好：不进库目录、不跟 iCloud 同步
@@ -293,6 +359,7 @@ export const CHANNELS = [
   'task:setMany', 'task:complete', 'task:uncomplete', 'task:trash', 'task:restore', 'task:purgeAll', 'task:menu',
   'ui:lastTask', 'ui:lang', 'ui:setLang', 'ui:theme', 'ui:setTheme',
   'ui:detailWidth', 'ui:setDetailWidth', 'ui:showDone', 'ui:setShowDone',
+  'ui:projectRepeat', 'ui:setProjectRepeat',
   'ui:customCal', 'ui:setCustomCalRange', 'ui:setCustomCalCols',
   'ui:sidebarCollapsed', 'ui:setSidebarCollapsed', 'ui:detailCollapsed', 'ui:setDetailCollapsed',
   'ui:view', 'ui:setView',

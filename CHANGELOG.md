@@ -2,6 +2,13 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.11.9 — 2026-10-05
+
+- New **Calendar** view: a real month calendar — one block per month, one week per row (Monday first), scrolling endlessly in both directions. It opens with three months either side of today and loads more as you reach an edge, lands on today's row, and the toolbar names the month you are looking at and offers **Back to today**. The "today" highlight is now just the day header strip rather than the whole cell, the same in all four calendar views.
+- That calendar also **projects future repeats**: a fixed-schedule task such as "read 20 minutes a day" is drawn on the days it will land on as greyed-out rows — display only, they cannot be ticked off, dragged or deleted, and they stay out of the sidebar count. "N days after completion" repeats are left alone (their dates depend on when you tick one off, so they cannot be known) and an `UNTIL` in the rule still ends the series. There is a toggle in the toolbar, on by default, and projection reaches one year ahead at most.
+- 新增「日历视图」：真正的月历 —— 一月一块、一周一行（周一开头），上下无限滚动（先铺今天所在月 ±3 个月，滚到边再接），进来就停在今天那一行；顶栏报当前月份，另有一枚「回到今天」。今天的高亮收成只点亮表头那一条，不再整格染色，四屏日历一致。
+- 月历还会**推演**周期任务未来会排到哪几天：「每天读书 20 分钟」这类固定周期任务往后画成置灰的行 —— 只展示，勾不了、拖不动、也删不掉，侧栏条数里也不算它们。「完成后 N 天再来」那种日期取决于你什么时候勾，算不出来，不推；规则里写了 `UNTIL` 的到那天就停。顶栏有开关（默认开），最远推到今天 + 1 年。
+
 ## 1.11.8 — 2026-10-01
 
 - The custom calendar now names the span you picked instead of keeping its own name: the heading reads `25 Sep – 7 Oct · 13 days`, counting the days for you, and the line under it drops to just the columns since the dates are already up there. Go back to picking a new range and the heading returns to Calendar (custom) — the old range is still the one in effect until you pick another.

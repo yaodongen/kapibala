@@ -86,10 +86,11 @@ describe('clampCalRange：拖过头时砍到 36 天', () => {
 })
 
 describe('视图 → 窗口大小分组', () => {
-  it('三个日历视图共用 calendar 一份，其余共用一个 other', () => {
+  it('四个日历视图共用 calendar 一份，其余共用一个 other', () => {
     expect(viewSlot('calendar7')).toBe('calendar')
     expect(viewSlot('calendar14')).toBe('calendar')
     expect(viewSlot('calendarCustom')).toBe('calendar')
+    expect(viewSlot('calendarMonth')).toBe('calendar')
     expect(viewSlot('today')).toBe('other')
     expect(viewSlot('all')).toBe('other')
   })
@@ -97,7 +98,7 @@ describe('视图 → 窗口大小分组', () => {
   it('认得出的分组就那两个，别的挡在外面', () => {
     for (const s of ['other', 'calendar']) expect(isWinSlot(s)).toBe(true)
     // 分家时代的旧名字不再当合法分组用（读旧偏好走 LEGACY_SLOT_KEYS，不是走这里）
-    for (const s of ['calendar7', 'calendar14', 'calendarCustom', 'calendarcustom', '', null, 0]) {
+    for (const s of ['calendar7', 'calendar14', 'calendarCustom', 'calendarmonth', '', null, 0]) {
       expect(isWinSlot(s)).toBe(false)
     }
   })

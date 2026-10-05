@@ -65,6 +65,15 @@ const ZH = {
   showDoneOn: '显示已完成的任务',
   showDoneOff: '不显示已完成的任务',
   /**
+   * 日历视图的「推演」开关：把周期任务**未来会排到哪几天**也画在格子里（置灰、只读，
+   * 勾不了也拖不动）。和上面那个开关一个规矩，提示语写"点了会变成什么"。
+   * 不推演的是"完成后 N 天再来"那种 —— 下一期取决于你什么时候勾，算不出来。
+   */
+  projectOn: '推演周期任务未来的安排',
+  projectOff: '不推演周期任务的未来安排',
+  /** 推演出来的行、以及格子上那个"几条真实 + 几条推演"里的标记 */
+  projectTag: '推演',
+  /**
    * 日历视图（自定义）：**选过范围之后，这一屏的大标题就直接报那段日期**，
    * 不再挂着「日历视图（自定义）」这个固定名字（侧栏那一项仍然是它，好认好点）。
    * 范围带上总天数（"9月25日 – 10月7日 共 13 天"）—— 标题本来就该报这段有多长，
@@ -84,6 +93,16 @@ const ZH = {
   calendarCustomLayout: '每行放几列',
   calendarCustomRedo: '重选范围',
   calendarCustomClear: '清空范围',
+  /**
+   * 「日历视图」—— 真正的月历：一月一块、一周一行（周一到周日），上下无限滚。
+   * 名字就用最朴素的那个（旁边的 7d / 14d / 自定义都带括号说明范围，这一屏不用——
+   * 它本来就是"日历该有的样子"）。副标题一句话说清它和自定义那屏的区别：
+   * 自定义是一次拖出一段固定日子，这一屏是一直往前/往后滚。
+   */
+  calendarMonth: '日历视图',
+  calendarMonthSub: '一月一块，上下滚动看前后几个月',
+  /** 月历顶栏那枚按钮：滚到几年以外之后一键回到今天那一行 */
+  calendarToday: '回到今天',
   /**
    * 收起/展开两侧栏的按钮提示。和主题开关一样写"点了会变成什么"：
    * 侧边栏那枚长在侧边栏里（收起后整块都不在了），展开那枚长在主区标题行最前面
@@ -243,6 +262,9 @@ const EN: typeof ZH = {
   themeToLight: 'Switch to light mode',
   showDoneOn: 'Show completed tasks',
   showDoneOff: 'Hide completed tasks',
+  projectOn: 'Project future repeats onto the calendar',
+  projectOff: 'Stop projecting future repeats',
+  projectTag: 'Projected',
   calendarCustom: 'Calendar (custom)',
   /** 英文的日期本来就带月份缩写，"9月25日 – 10月7日 共 13 天"在这儿是 "Sep 25 – Oct 7 · 13 days" */
   calendarCustomRange: (from, to, days) => `${from} – ${to} · ${days} days`,
@@ -256,6 +278,9 @@ const EN: typeof ZH = {
   calendarCustomLayout: 'Columns per row',
   calendarCustomRedo: 'Pick a new range',
   calendarCustomClear: 'Clear the range',
+  calendarMonth: 'Calendar',
+  calendarMonthSub: 'One block per month — scroll up or down for more',
+  calendarToday: 'Back to today',
   sidebarCollapseTip: 'Hide the sidebar and focus on the tasks',
   sidebarExpandTip: 'Show the sidebar',
   detailCollapseTip: 'Hide the detail pane and focus on the tasks',

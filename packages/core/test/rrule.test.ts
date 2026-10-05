@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeRrule, formatRrule, nextAfter, parseRrule, presetsFor } from '../src/rrule.ts'
+import { describeRrule, formatRrule, nextAfter, occurrencesBetween, parseRrule, presetsFor } from '../src/rrule.ts'
 import { nextOccurrence, toRruleString } from '../src/repeat.ts'
 import { derivedId } from '../src/ids.ts'
 import type { Task } from '../src/types.ts'
@@ -117,6 +117,67 @@ describe('下一次是哪天', () => {
     const next = nextAfter(r, at('2026-08-26T19:30'), at('2026-08-26T19:30'))!
     expect(new Date(next).getHours()).toBe(19)
     expect(new Date(next).getMinutes()).toBe(30)
+  })
+})
+
+/** 推演取出来的那一串：按"几月几号 时:分"写出来，好读 */
+const days = (l: number[]) => l.map(t => {
+  const d = new Date(t)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+})
+
+describe('一段范围里的每一期（日历推演用）', () => {
+  it('每天：起点那天也算进来', () => {
+    const rule = parseRrule('FREQ=DAILY')!
+    expect(days(occurrencesBetween(rule, at('2026-08-26T20:00'), at('2026-08-30T00:00'), at('2026-09-01T23:59'))))
+      .toEqual(['8/30 20:00', '8/31 20:00', '9/1 20:00'])
+  })
+
+  it('起点之前的一期都不要 —— anchor 在两年前也不会白扫一遍', () => {
+    const rule = parseRrule('FREQ=DAILY')!
+    expect(days(occurrencesBetween(rule, at('2024-01-01T09:00'), at('2026-08-30T00:00'), at('2026-09-01T23:59'))))
+      .toEqual(['8/30 09:00', '8/31 09:00', '9/1 09:00'])
+  })
+
+  it('每周一次 / 仅工作日都按规则来', () => {
+    // 2026-08-26 是周三：它那一周往后每周三
+    expect(days(occurrencesBetween(parseRrule('FREQ=WEEKLY')!, at('2026-08-26T09:00'),
+      at('2026-08-27T00:00'), at('2026-09-30T23:59'))))
+      .toEqual(['9/2 09:00', '9/9 09:00', '9/16 09:00', '9/23 09:00', '9/30 09:00'])
+    // 从周五（8/28）往后：周末跳过
+    expect(days(occurrencesBetween(parseRrule('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')!, at('2026-08-28T09:00'),
+      at('2026-08-29T00:00'), at('2026-09-02T23:59'))))
+      .toEqual(['8/31 09:00', '9/1 09:00', '9/2 09:00'])
+  })
+
+  it('每月最后一天：月底那几天不漏也不多', () => {
+    expect(days(occurrencesBetween(parseRrule('FREQ=MONTHLY;BYMONTHDAY=-1')!, at('2026-08-31T18:00'),
+      at('2026-09-01T00:00'), at('2026-12-31T23:59'))))
+      .toEqual(['9/30 18:00', '10/31 18:00', '11/30 18:00', '12/31 18:00'])
+  })
+
+  it('每月 31 号：没有 31 号的月份跳过（和 RFC 一致）', () => {
+    // 「每月」不带 BYMONTHDAY 时，意思是"每月的 31 号"：2 月、4 月都没有 31 号，跳过。
+    // 「每月最后一天」是另一条规则（BYMONTHDAY=-1），上面单独测了
+    expect(days(occurrencesBetween(parseRrule('FREQ=MONTHLY')!, at('2026-01-31T09:00'),
+      at('2026-02-01T00:00'), at('2026-05-01T00:00'))))
+      .toEqual(['3/31 09:00'])
+  })
+
+  it('UNTIL 到了就不再往后推；anchor 自己那一天不算（它是真实的那一期）', () => {
+    expect(days(occurrencesBetween(parseRrule('FREQ=DAILY;UNTIL=20260902')!, at('2026-08-30T09:00'),
+      at('2026-08-30T00:00'), at('2026-09-30T23:59'))))
+      .toEqual(['8/31 09:00', '9/1 09:00', '9/2 09:00'])
+  })
+
+  it('limit 是保险丝：够了就停，不无限往下数', () => {
+    expect(occurrencesBetween(parseRrule('FREQ=DAILY')!, at('2026-08-30T09:00'),
+      at('2026-08-30T00:00'), at('2030-01-01T00:00'), 5)).toHaveLength(5)
+  })
+
+  it('空范围（to 在 from 之前）返回空', () => {
+    expect(occurrencesBetween(parseRrule('FREQ=DAILY')!, at('2026-08-30T09:00'),
+      at('2026-09-10T00:00'), at('2026-09-01T00:00'))).toEqual([])
   })
 })
 
