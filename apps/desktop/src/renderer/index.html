@@ -243,6 +243,14 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
 .calmeta{ display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px;
           font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums }
 .calmeta .tag.rep{ margin:0; padding:0 4px; font-size:10.5px }
+/* 格子里的重复标签必须让位。.tag.rep 是 flex:none + nowrap（见上面的 .tag.rep）：
+   列表行那么宽，规则名再长也放得下；格子只有九十来到一百六十像素，
+   英文 "Monthly on the 2nd Tuesday" 有 165px，比 5 列的一格还宽 —— 它不会换行也不会缩，
+   直接横着捅出去压在隔壁格的时间上（中文 7 列时"每月第二个周二"同样会）。
+   格子窄，这里只能截：宽度封在格子里，放不下给省略号，全文挂在标签的 title 上（见 calRow），
+   悬浮还是看得到，详情栏里也有完整规则 */
+.calrow .calmeta .tag.rep{ display:block; min-width:0; max-width:100%;
+                           overflow:hidden; text-overflow:ellipsis }
 
 /* ── 「连续日历」：日子一天接一天铺下去，上下无限滚，每行放几列由用户定（--cal-cols） ──
    和上面 7d / 14d 那两屏共用 .calcell / .calrow / data-day 那一套

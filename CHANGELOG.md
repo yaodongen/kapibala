@@ -2,6 +2,13 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.0 — 2026-10-05
+
+- The README now leads with the **Continuous calendar** — what it is, how to read it, what dragging and projection do — and then says out loud what the app is *for*: today's cell holds today's load, nothing unfinished is rescheduled for you, and no figure tells you how much you "owe". No notifications, no badges, no streaks, nothing chasing you. Two new screenshots, freshly taken from the real app.
+- Fix: repeat badges inside calendar cells no longer print over the neighbouring day. `.tag.rep` is `flex:none` + `nowrap` — right for a wide list row, wrong for a 163px cell, where a long rule name (`Monthly on the 2nd Tuesday` measures 165px) stuck out sideways onto the next cell's times; Chinese hits the same at 7 columns. Inside cells the badge is now clamped to the cell and truncates with an ellipsis, with the full rule on hover and in the detail pane.
+- README 改成以「**连续日历**」为主线：这一屏是什么、怎么看、拖一下和推演各是干什么的，然后把这套东西背后的想法讲明白 —— 今天这一格就是今天的量，没做完的事不会顺延到明天，也没有任何数字告诉你"欠了多少"；没有通知、没有红点、没有连续打卡，你不开它，它不来找你。两张截图都是从真机上重新截的。
+- 修：日历格子里的重复标签不再压在隔壁那一天上。`.tag.rep` 是 `flex:none` + `nowrap`（在列表行里这么写没错），可放进 163px 的格子就出事了：英文长规则名（`Monthly on the 2nd Tuesday` 量出来 165px）横着捅出去，盖住隔壁格的时间；中文 7 列时"每月第二个周二"同样会。格子里改成宽度封顶 + 省略号，全文在悬浮提示和详情栏里。
+
 ## 1.11.11 — 2026-10-05
 
 - **Today** in the calendar views is now marked by an accent-coloured line under the day header that curves up at both ends, with the date and the weekday turning accent-coloured to match. The solid 2px outline and the tinted header block are gone — one line does the job, and it is the separator that was already there.

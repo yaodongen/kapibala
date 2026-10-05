@@ -1227,7 +1227,9 @@ function calRow(t: Task, cell: CalCell): string {
   // 有 tip 就照样把这个空壳画出来（窄格里已完成的那行正文是空的），否则没地方挂提示
   const meta = when || rep || tip
     ? `<div class="calmeta"${tip ? ` title="${esc(tip)}"` : ''}>${when ? `<span>${esc(when)}</span>` : ''}${
-        rep ? `<span class="tag rep">↻ ${esc(rep)}</span>` : ''}</div>`
+        // 重复标签在格子里放不下就截成省略号（见 index.html 的 .calrow .calmeta .tag.rep），
+        // 所以整条规则挂在标签自己的 title 上 —— 截掉的那半句悬浮就看得到
+        rep ? `<span class="tag rep" title="↻ ${esc(rep)}">↻ ${esc(rep)}</span>` : ''}</div>`
     : ''
   // 进行中：徽标钉在格子右上角，标题给它让出宽度（见 index.html 的 .calrow .tag.doing）。
   // 标题带 title：装不下时被截成一行加省略号，悬浮还能看全

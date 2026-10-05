@@ -8,9 +8,35 @@ Kapibala is a to-do app for macOS and Windows. Like Obsidian, it keeps all of yo
 
 **Put it on a synced drive and your devices stay in sync.** iCloud Drive, OneDrive, Dropbox, Nutstore — any of them works, and a Mac and a Windows PC can share the same vault. Keep it off a synced drive and Kapibala is a purely local app.
 
-![The Kapibala main window](./docs/images/screenshot.png)
+**It does not nag.** No notifications, no red badges, no "12 overdue" counter, and nothing unfinished gets pushed to tomorrow. In the Continuous calendar the things you did not get to stay on the day they belonged to — scroll up and there they are. Let the unimportant ones go by.
 
-## 1. Download
+![The Kapibala Continuous calendar](./docs/images/screenshot.png)
+
+## 1. The Continuous calendar: one day after another
+
+This is the screen the app opens on. Days are **not cut into months** — they run one after another, endlessly, in both directions: scroll up for months of history, down for years ahead, and more days are laid out as you reach an edge. How many cells fit in a row is yours to pick (3–7, five by default).
+
+- **Today is a line.** Today's cell gets no fill — just an accent-coloured line under the day header, curving up slightly at both ends. One glance across the grid and you know where you are standing.
+- **Every cell carries its own full date and weekday.** This screen has no Monday-to-Sunday columns (columns and weekdays are not aligned here), so each cell spells it out: `2026-10-05 / Mon`. Weekends turn the date accent-coloured, and the toolbar names the month as you scroll.
+- **Drag to reschedule.** Drag a task from one day to another and the time of day stays put; which day it lands on, and where it sits in that day, is wherever you drop it.
+- **Repeats show you where they will land.** A fixed-schedule task such as "read 20 minutes a day" is drawn on the days it will fall on as greyed-out rows — display only: they cannot be ticked off, dragged, or deleted, and they stay out of the sidebar counts. "N days after completion" repeats are left alone (their dates depend on when you tick one off, so they cannot be known). There is a toggle in the toolbar, on by default, and projection reaches one year ahead at most.
+- **Overdue never piles up.** Nothing unfinished is moved to today, and nothing collects into a list that grows longer every week — it stays on the day it belonged to. Scroll up and last week's leftovers are simply there.
+
+### Let the unimportant ones go by
+
+A to-do list turns into an invoice you owe yourself surprisingly fast: yesterday's leftovers sit in today, today's slide into tomorrow, the number keeps climbing, and eventually you stop opening the app.
+
+Kapibala does not work that way:
+
+- **Today's cell holds today's load** — it does not carry yesterday's balance. Yesterday's things stay in yesterday's cell; nothing is rescheduled for you, and nothing counts what you "owe".
+- **No notifications, no red badges, no streaks**, and no "N overdue" figure. If you do not open the app, it will not come looking for you.
+- **Do it when you want to.** If something really matters, mark it **Important** and it goes to the top of its day (with a red bar on the left); mark what you are working on **In progress** and the row carries a badge. Everything else can wait — or not happen.
+
+![The days before today: whatever was not finished is still sitting on its own day](./docs/images/overdue.png)
+
+> That one is scrolled back a few days: what was left undone between Sep 30 and Oct 4 is still on its own day — not moved to today, and not collected into an "overdue" list.
+
+## 2. Download
 
 Grab the package for your platform from [Releases](https://github.com/yaodongen/kapibala/releases/latest).
 
@@ -32,7 +58,7 @@ Grab the package for your platform from [Releases](https://github.com/yaodongen/
 
 > It is not code-signed there either, so SmartScreen stops the first launch once: click "More info" → "Run anyway".
 
-## 2. Getting started
+## 3. Getting started
 
 1. Launch Kapibala and pick a folder to be your **vault**. Every task lives in there.
 2. To sync across devices, pick a folder inside a sync drive — on a Mac, say iCloud Drive's `~/Library/Mobile Documents/com~apple~CloudDocs/my-todo`; on Windows, say a folder inside OneDrive. Open the same folder on the other machine.
@@ -42,7 +68,7 @@ Multiple vaults work too: one for work, one for life, switched at any time and n
 
 Want a backup? Copy the whole folder (on macOS `cp -r` or Time Machine; on Windows just drag it somewhere). Done with the app? Delete it — the data is still yours.
 
-## 3. How your devices stay in sync
+## 4. How your devices stay in sync
 
 Every machine — Mac or Windows — owns one subfolder inside the vault and writes only there; the sync service you picked just carries files around.
 
@@ -72,7 +98,7 @@ Two edits to the same task on two machines are not a conflict: whichever write i
 
 Because no file is ever written by two machines, the classic synced-folder failure — the `000001 2.jsonl` conflict copy — cannot happen. The same holds across platforms: a Mac and a PC can share one vault because neither ever writes into the other's device folder.
 
-## 4. Features
+## 5. Features
 
 **Tasks**
 
@@ -87,6 +113,7 @@ Because no file is ever written by two machines, the classic synced-folder failu
 
 **Views**
 
+- **Continuous calendar**: see section 1 above — this is where the app opens
 - Today
 - **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
 - Next 30 days: same grouping, for the month ahead
@@ -100,18 +127,21 @@ Because no file is ever written by two machines, the classic synced-folder failu
 
 - English and Chinese. It follows your Mac's language, and you can switch any time from the bottom-left corner
 - The bottom-left corner shows the version number; clicking it opens the log
-- Window size is remembered per view: the two calendar views each keep their own, so switching back restores the size you dragged
+- Window size and detail-pane state are remembered per view: the three calendar views share one slot, the other views another, so switching back restores the size you dragged
 - Closing the window just tucks it away and the app keeps running. To really quit: on macOS right-click the Dock icon and choose Quit; on Windows right-click the tray icon
 
-## 5. Privacy
+## 6. Privacy
 
 - **It never goes online.** The only thing that touches your tasks is the sync service you picked.
 - **A readable format.** Storage is JSON Lines — one JSON object per line, plain text, not an opaque binary blob. You can see exactly what the app wrote, whenever you want. The layout is documented in [`docs/storage.md`](./docs/storage.md).
 
-## 6. FAQ
+## 7. FAQ
 
 **Do I have to use iCloud?**
 No. The vault folder can live anywhere — `~/Documents`, an external drive, Dropbox, Nutstore, any sync service. Keep it off a synced drive and the app is purely local.
+
+**Do unfinished tasks pile up forever?**
+In the Continuous calendar they stay on their own day, out of your way. The list views (Today / Next 7 days / Next 30 days) do collect what is still open into an **Overdue** group at the top, so you can clear it in one pass when you feel like it — but that is all it does: no reminders, no counters, nothing chasing you.
 
 **Can a Mac and a Windows PC share one vault?**
 Yes — that is a design goal now. Each machine gets its own device folder inside the vault, so mixing platforms causes no fights, and tasks and notes look identical on both sides. The only requirement is that your sync service carries files across unchanged (iCloud Drive, OneDrive, Dropbox and Nutstore all do).
@@ -119,7 +149,7 @@ Yes — that is a design goal now. Each machine gets its own device folder insid
 **"Kapibala"?**
 Capybara. The least anxious animal on earth. A to-do list should make you a little more like one.
 
-## 7. Development
+## 8. Development
 
 Needs Node 22.18+ (the sources run directly, there is no compile step) and `corepack`. One command builds the app and installs it into `/Applications`:
 
@@ -142,6 +172,6 @@ Two things differ from macOS on Windows, both decided by the OS: closing the win
 
 Design notes live in [`docs/`](./docs): [`architecture.md`](./docs/architecture.md) for how the pieces fit together, [`storage.md`](./docs/storage.md) for the on-disk format.
 
-## 8. License
+## 9. License
 
 MIT, see [LICENSE](./LICENSE).
