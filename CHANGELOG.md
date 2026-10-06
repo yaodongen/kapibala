@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.1 — 2026-10-06
+
+- Long task titles now show in full in the detail pane. The title was a single-line field, so anything past the right edge was simply cut off; it wraps onto as many lines as it needs and the pane grows with it. Enter still saves and closes the title, as before.
+- 详情栏的标题改成折行显示：以前是个单行输入框，长标题超出右边界的部分直接被截掉，现在按需要排成几行、整条都看得见，详情栏跟着长高。回车保存并收起的老规矩没变。
+
 ## 1.12.0 — 2026-10-05
 
 - The README now leads with the **Continuous calendar** — what it is, how to read it, what dragging and projection do — and then says out loud what the app is *for*: today's cell holds today's load, nothing unfinished is rescheduled for you, and no figure tells you how much you "owe". No notifications, no badges, no streaks, nothing chasing you. Two new screenshots, freshly taken from the real app.

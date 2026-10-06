@@ -417,9 +417,13 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
 /* 拖动中整窗都是左右箭头，鼠标滑多快都不会在别处变回箭头 */
 body.resizing, body.resizing *{ cursor:col-resize !important }
 .dhead{ display:flex; align-items:flex-start; gap:8px; padding:8px 16px 10px }
-/* 标题就地可编辑：外观仍是标题，不做成一眼就是输入框的样子 */
+/* 标题就地可编辑：外观仍是标题，不做成一眼就是输入框的样子。
+   textarea 的长标题要折行，所以加 resize:none（右下角那撮拖动纹）和
+   overflow-y:hidden（高度已经跟内容长齐了，别再多一条内部滚动条）；
+   高度不写死，由 app.ts 的 growTitle() 按 scrollHeight 给 —— 长标题整条都看得见 */
 .dhead .t{ font-size:14.5px; font-weight:600; line-height:1.4; width:100%; padding:0; margin:0;
            border:none; outline:none; background:none; color:var(--text); font-family:inherit;
+           resize:none; overflow-y:hidden; overflow-wrap:break-word; display:block;
            -webkit-user-select:text; user-select:text }
 .dhead .t:hover{ background:var(--row-hover); border-radius:5px }
 .dhead .t:focus{ background:var(--row-hover); border-radius:5px }
@@ -546,7 +550,7 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
          background:var(--accent-soft); color:var(--accent) }
 .banner.warn{ background:#fdeceb; color:var(--danger) }
 @media (prefers-color-scheme:dark){ .banner.warn{ background:#3a2422 } }
-.title, .add input{ -webkit-user-select:text; user-select:text }
+.title, .add input, textarea{ -webkit-user-select:text; user-select:text }
 /* 藏了标题栏就必须自己给一条可拖动区域，否则窗口拖不动 */
 /* 引导页 */
 .welcome{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
@@ -603,7 +607,7 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .titlebar{ position:fixed; top:0; left:0; right:0; height:34px; z-index:50;
            -webkit-app-region:drag; app-region:drag }
 /* 可拖动区域里的可点击元素要单独排除，否则点不动 */
-.titlebar *, .nav, button, input, select{ -webkit-app-region:no-drag; app-region:no-drag }
+.titlebar *, .nav, button, input, select, textarea{ -webkit-app-region:no-drag; app-region:no-drag }
 
 /* ── Windows 的标题栏 ──
    那边藏掉标题栏后，最小化/最大化/关闭三个按钮是系统画在右上角的
@@ -723,7 +727,9 @@ html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
 
   <aside class="detailpane" id="detail">
     <div class="dhead">
-      <input class="t" id="dtitle" autocomplete="off">
+      <!-- 标题是 textarea 不是 input：单行 input 里长标题会在右边被截掉，
+           而任务标题往往很长（截图里那条就是）。折行显示，高度由 growTitle() 跟着内容长 -->
+      <textarea class="t" id="dtitle" rows="1" autocomplete="off"></textarea>
     </div>
     <div class="dmeta" id="dmeta"></div>
     <div class="dlabel" id="dlabel"></div>

@@ -450,7 +450,7 @@ function applyStatic() {
     $(id).innerHTML = v
   ;($('search') as HTMLInputElement).placeholder = S.searchPlaceholder
   ;($('newTitle') as HTMLInputElement).placeholder = S.addPlaceholder
-  ;($('dtitle') as HTMLInputElement).placeholder = S.titlePlaceholder
+  ;($('dtitle') as HTMLTextAreaElement).placeholder = S.titlePlaceholder
   // 添加栏那两个原生日期/时间框没有可见标签，靠 title + aria-label 说清楚留空是什么意思
   for (const [id, tip] of [['newDate', S.addDateTip], ['newTime', S.addTimeTip]] as Array<[string, string]>) {
     const el = $(id)
@@ -1250,12 +1250,35 @@ function calRow(t: Task, cell: CalCell): string {
   </div>`
 }
 
+/**
+ * 详情栏的标题框（textarea）长多高：按内容折行后的实际高度来，长标题整条都看得见。
+ *
+ * 先把 height 清成 auto 再读 scrollHeight —— 否则读到的是上一次设进去的高度，
+ * 标题改短以后框不会缩回去（清空时还会留一屏空白）。
+ * rows="1" 只是没有脚本时的兜底；正常路径上高度都由这里给。
+ */
+function growTitle() {
+  const el = $('dtitle') as HTMLTextAreaElement
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+/**
+ * 详情栏宽度一变（拖分隔线、双击复位、窗口缩放）标题就要重新量一次：
+ * 折几行是跟着可用宽度走的，宽度变了行数就变了。
+ * 观察 .detailpane 而不是标题框自己 —— 框的高度正是这里设的，
+ * 盯着它容易绕成"量一次改一次"的循环。
+ */
+new ResizeObserver(() => growTitle()).observe($('detail'))
+
 /** 右侧详情栏。点任务打开，展示标题、时间和备注 */
 function renderDetail() {
   const t = selected ? tasks.find(x => x.id === selected) : undefined
   if (!t) { selected = null; editing = false }
   if (!t) {                                   // 备注栏常驻，没选中就显示提示
-    $('dtitle').textContent = ''
+    ;($('dtitle') as HTMLTextAreaElement).value = ''
+    growTitle()                               // 上一条的标题可能有好几行高，这里要缩回去
     $('dmeta').innerHTML = ''
     $('dbody').innerHTML = `<div class="dempty">${S.notesNoSelection}</div>`
     return
@@ -1270,7 +1293,10 @@ function renderDetail() {
   const typingNote = editing && !!focused?.closest?.('[data-noteedit]')
   const typingCustom = !!focused?.closest?.('.customdays')
 
-  if (!typingTitle) ($('dtitle') as HTMLInputElement).value = t.title
+  if (!typingTitle) ($('dtitle') as HTMLTextAreaElement).value = t.title
+  // 高度每次都重量一遍：正在打字的那个框不走上面这行，但它可能在没触发 input 的
+  // 情况下变过内容（比如清空后 saveTitle 把原文写回来），高度得跟上
+  growTitle()
   const d = t.startAt !== undefined ? new Date(t.startAt) : null
   const iso = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
   const bits: string[] = []
@@ -1916,7 +1942,7 @@ document.addEventListener('keydown', (e) => {
 setInterval(() => {
   const note = document.querySelector<HTMLTextAreaElement>('[data-noteedit]')
   if (note) void autosaveNote(note)
-  const dt = $('dtitle') as HTMLInputElement
+  const dt = $('dtitle') as HTMLTextAreaElement
   if (document.activeElement === dt && dt.value.trim()) void saveTitle()
 }, 5000)
 // 点到别处也保存，别让用户白写一段
@@ -2155,7 +2181,7 @@ $('vaultadd').addEventListener('click', async () => {
 
 /** 详情栏里的标题就地编辑。回车或失焦保存，esc 还原；不接受清空 */
 async function saveTitle() {
-  const el = $('dtitle') as HTMLInputElement
+  const el = $('dtitle') as HTMLTextAreaElement
   const id = selected
   if (!id) return
   const t = tasks.find(x => x.id === id)
@@ -2166,13 +2192,16 @@ async function saveTitle() {
 }
 
 $('dtitle').addEventListener('keydown', (e) => {
-  const el = e.target as HTMLInputElement
+  const el = e.target as HTMLTextAreaElement
   // 回车直接保存，不绕 blur —— 那条路依赖焦点状态，边界情况下会静默不保存
   if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); void saveTitle(); el.blur() }
   // esc 同样是保存后收起，不还原
   if ((e as KeyboardEvent).key === 'Escape') { e.preventDefault(); void saveTitle(); el.blur() }
 })
 $('dtitle').addEventListener('blur', () => void saveTitle())
+// 边打边长：打到第二行就看得出来长了，不用等失焦（renderDetail 里那个 typingTitle 守卫
+// 保证重建时跳过这个框，所以这里改高度不会被打断）
+$('dtitle').addEventListener('input', growTitle)
 
 /** 列表里就地改标题。和详情栏那个走同一条写入路径，规则也一样：不接受清空 */
 async function saveRowTitle(el: HTMLInputElement) {
