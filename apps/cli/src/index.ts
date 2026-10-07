@@ -13,6 +13,12 @@ const C = color
   : { dim: '', b: '', red: '', green: '', brown: '', off: '' }
 const short = (id: string) => id.slice(-6).toLowerCase()
 
+/** done-list 也在里面：它是能用的调试口，只是没写进帮助 */
+const TASK_COMMANDS = new Set([
+  'add', 'today', 'ls', 'done', 'undone', 'rm', 'trash', 'restore', 'purge',
+  'search', 'doctor', 'done-list',
+])
+
 const HELP = `${C.b}kapi${C.off} —— 卡皮巴拉命令行
 
   ${C.b}库${C.off}
@@ -148,7 +154,19 @@ async function main() {
       console.log(`当前库 → ${C.b}${v.name}${C.off}`)
       return
     }
+    // 光说 `vault` 是"看帮助"，说个不认识的子命令才算用错
+    if (sub) { console.log(`未知子命令：vault ${sub}\n`); console.log(HELP); process.exitCode = 1; return }
     console.log(HELP); return
+  }
+
+  // 需要在库上干活的命令。不在这里的一律**开库之前**拦下 —— 否则 `kapi nope`
+  // 会先报"还没有库"（没库的机器上根本看不到"未知命令"），有库时还会白开一次库、
+  // 顺手改一遍注册表
+  if (!TASK_COMMANDS.has(cmd)) {
+    // 打帮助，但退出码是 1 —— 脚本里 `kapi typo && …` 不该被当成成功
+    console.log(`未知命令：${cmd}\n`); console.log(HELP)
+    process.exitCode = 1
+    return
   }
 
   const s = await open()
@@ -240,8 +258,6 @@ async function main() {
                   `${h.incomplete ? ` ${C.red}有文件读不出来，历史可能不完整${C.off}` : ''}`)
       return
     }
-    default:
-      console.log(`未知命令：${cmd}\n`); console.log(HELP)
   }
 }
 

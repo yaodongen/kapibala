@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.2 — 2026-10-07
+
+- The command line has a manual now: [`docs/cli.md`](./docs/cli.md) / [`docs/cli.zh.md`](./docs/cli.zh.md) covers every vault and task command, what `--at` accepts, `--repeat`'s two modes, running alongside the desktop app, and exit codes. Writing it down turned up two fixes: `--at fri` lands on the nearest Friday instead of skipping a week, and an unknown command exits 1 instead of 0.
+- 补了命令行手册（[`docs/cli.zh.md`](./docs/cli.zh.md)）：库和任务的每条命令、`--at` 认得哪些写法、`--repeat` 的两种模式、和桌面版同时用时的锁、退出码。写文档时顺手修了两处：`--at 周五` 现在落在最近的那个周五（原先会滑到下一周），未知命令的退出码从 0 改成 1。
+
 ## 1.12.1 — 2026-10-06
 
 - Long task titles now show in full in the detail pane. The title was a single-line field, so anything past the right edge was simply cut off; it wraps onto as many lines as it needs and the pane grows with it. Enter still saves and closes the title, as before.

@@ -20,7 +20,9 @@ export function parseWhen(s: string): { at: number; allDay: boolean } | null {
   const wd = WD_KEY[v.replace(/^周/, '')] ?? WD_KEY[v]
   if (wd !== undefined) {
     const t = today(), cur = new Date(t).getDay()
-    return { at: t + ((wd - cur + 7) || 7) * DAY, allDay: true }
+    // 取**最近的那一次**（和界面的 when.ts 一个口径）：今天就是那天则算下一周。
+    // 少了 % 7 会把 thu/fri/sat 推到再下一周 —— 周三说 fri 指的是这周五，不是下周五
+    return { at: t + ((wd - cur + 7) % 7 || 7) * DAY, allDay: true }
   }
   const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[t ](\d{2}):(\d{2}))?$/.exec(v)
   if (iso) {

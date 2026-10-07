@@ -170,6 +170,8 @@ KAPIBALA_OS=win32 corepack pnpm exec electron .
 
 Windows 上有两处和 macOS 不一样，都是系统决定的：关掉窗口是**收进托盘**（右键托盘选「退出」才真的退出，不然窗口关了就既回不来也退不掉）；库和界面偏好放在 `%APPDATA%\Kapibala`，和 Mac 上一样不进库目录。同步照旧——OneDrive、坚果云、Dropbox 都行，只是不再有 iCloud 那种"占位符还没下载下来"的概念。
 
+命令行手册在 [`docs/cli.zh.md`](./docs/cli.zh.md)：`make deploy` 装好 `kapi` 之后，`kapi --help` 看命令，`kapi add "买菜" --at today`、`kapi today` 就能用。
+
 设计说明在 [`docs/`](./docs)：[`architecture.zh.md`](./docs/architecture.zh.md) 讲各部分怎么配合，[`storage.zh.md`](./docs/storage.zh.md) 讲磁盘上的格式。
 
 ## 9. 许可

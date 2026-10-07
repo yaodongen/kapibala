@@ -19,7 +19,8 @@
   "include": [
     "packages/*/src",
     "packages/*/test",
-    "apps/*/src"
+    "apps/*/src",
+    "apps/*/test"
   ],
   "exclude": [
     "apps/desktop/src/renderer"

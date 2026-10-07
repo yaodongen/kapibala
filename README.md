@@ -170,6 +170,8 @@ KAPIBALA_OS=win32 corepack pnpm exec electron .
 
 Two things differ from macOS on Windows, both decided by the OS: closing the window **hides it to the tray** (right-click the tray icon and pick Quit to really exit — otherwise a closed window can be neither reached nor dismissed); and app data lives in `%APPDATA%\Kapibala`, never inside the vault folder, same as on the Mac. Syncing is unchanged — OneDrive, Dropbox, Nutstore all work; there is just no iCloud "placeholder not downloaded yet" state to handle.
 
+The command-line manual is [`docs/cli.md`](./docs/cli.md): after `make deploy` installs `kapi`, run `kapi --help`, or just `kapi add "buy groceries" --at today` and `kapi today`.
+
 Design notes live in [`docs/`](./docs): [`architecture.md`](./docs/architecture.md) for how the pieces fit together, [`storage.md`](./docs/storage.md) for the on-disk format.
 
 ## 9. License
