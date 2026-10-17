@@ -3,9 +3,8 @@ import { LEGACY_SLOT_KEYS, LEGACY_VIEW_IDS, MONTH_CAL_COLS, isViewId, isWinSlot,
          restorableView, viewSlot } from '../src/index.ts'
 
 describe('视图 → 窗口大小分组', () => {
-  it('三个日历视图共用 calendar 一份，其余共用一个 other', () => {
+  it('两个日历视图共用 calendar 一份，其余共用一个 other', () => {
     expect(viewSlot('calendar7')).toBe('calendar')
-    expect(viewSlot('calendar14')).toBe('calendar')
     expect(viewSlot('calendarFlow')).toBe('calendar')
     expect(viewSlot('today')).toBe('other')
     expect(viewSlot('all')).toBe('other')
@@ -28,7 +27,7 @@ describe('视图 → 窗口大小分组', () => {
 
 describe('restorableView：ui.json 里躺着的视图 id', () => {
   it('认得的原样返回', () => {
-    for (const v of ['today', 'next7', 'next30', 'calendar7', 'calendar14', 'calendarFlow', 'all']) {
+    for (const v of ['today', 'next7', 'next30', 'calendar7', 'calendarFlow', 'all']) {
       expect(restorableView(v)).toBe(v)
     }
   })
@@ -40,6 +39,9 @@ describe('restorableView：ui.json 里躺着的视图 id', () => {
     // 连续日历自己的上一个名字（当时叫"一月一块的真月历"），老 ui.json 里存的就是它
     expect(LEGACY_VIEW_IDS['calendarMonth']).toBe('calendarFlow')
     expect(restorableView('calendarMonth')).toBe('calendarFlow')
+    // 14d 撤掉了：多几天这种诉求由连续日历接住，别让老用户下次打开跳回默认列表
+    expect(LEGACY_VIEW_IDS['calendar14']).toBe('calendarFlow')
+    expect(restorableView('calendar14')).toBe('calendarFlow')
     // 新的那个 id 本身当然是合法的（别把"改名"写成"两边都认不出来"）
     expect(restorableView('calendarFlow')).toBe('calendarFlow')
   })
@@ -58,7 +60,7 @@ describe('restorableView：ui.json 里躺着的视图 id', () => {
   })
 })
 
-describe('月历每行几列', () => {
+describe('连续日历每行几列', () => {
   it('3~7 都认，默认 5', () => {
     expect(MONTH_CAL_COLS).toEqual({ min: 3, max: 7, def: 5 })
     for (let n = 3; n <= 7; n++) expect(normMonthCalCols(n)).toBe(n)

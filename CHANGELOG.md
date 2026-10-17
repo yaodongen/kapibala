@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.3 — 2026-10-17
+
+- The calendar now knows when the day has turned: after midnight, or when the window comes back into focus after a sleep, every view re-renders on the new day instead of still showing yesterday's "today", and the continuous calendar keeps the days it has already laid out and its scroll position — only the today marker moves. Its grid is now anchored to 2026-01-01, so a date always lands in the same column no matter when you open it. The 14d view is gone (the continuous calendar covers it); an `ui.json` that still says `calendar14` opens the continuous calendar instead.
+- 跨天之后界面会自己翻篇：过了午夜，或者合盖睡醒、窗口重新拿到焦点时，每个页面上的「今天」都会更新，不用再切一下 tab；连续日历不重铺已经排好的日子、也不动滚动位置，只把那道「今天」的高亮挪到新的一天。连续日历的排版固定从 2026-01-01 起算，同一天不管什么时候打开都落在同一列。撤掉「日历视图（14d）」这一栏（连续日历已经覆盖它），`ui.json` 里还存着 `calendar14` 的会落到连续日历。
+
 ## 1.12.2 — 2026-10-07
 
 - The command line has a manual now: [`docs/cli.md`](./docs/cli.md) / [`docs/cli.zh.md`](./docs/cli.zh.md) covers every vault and task command, what `--at` accepts, `--repeat`'s two modes, running alongside the desktop app, and exit codes. Writing it down turned up two fixes: `--at fri` lands on the nearest Friday instead of skipping a week, and an unknown command exits 1 instead of 0.

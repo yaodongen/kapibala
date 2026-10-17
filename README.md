@@ -118,7 +118,6 @@ Because no file is ever written by two machines, the classic synced-folder failu
 - **Next 7 days**: grouped by date and weekday, soonest first, with overdue tasks pinned in their own group on top
 - Next 30 days: same grouping, for the month ahead
 - **Calendar (7d)**: overdue + the next 7 days, tiled by day in a 4 × 2 grid, overdue in the first cell
-- **Calendar (14d)**: overdue + the next 14 days, in a 5 × 3 grid
 - All tasks
 - **Completed**: grouped by the day you finished it, most recent day first, with the time of day on the left of each row
 - Trash
@@ -127,7 +126,7 @@ Because no file is ever written by two machines, the classic synced-folder failu
 
 - English and Chinese. It follows your Mac's language, and you can switch any time from the bottom-left corner
 - The bottom-left corner shows the version number; clicking it opens the log
-- Window size and detail-pane state are remembered per view: the three calendar views share one slot, the other views another, so switching back restores the size you dragged
+- Window size and detail-pane state are remembered per view: the two calendar views share one slot, the other views another, so switching back restores the size you dragged
 - Closing the window just tucks it away and the app keeps running. To really quit: on macOS right-click the Dock icon and choose Quit; on Windows right-click the tray icon
 
 ## 6. Privacy

@@ -92,7 +92,7 @@ const ZH = {
   /**
    * 「连续日历」—— 日子一天接一天铺下去、上下无限滚的那一屏。**不分月**：
    * 没有"一月一块"，哪一天是几月几号由每格自己那串完整日期说（见 cellDay）。
-   * 名字就按这个概念取，别叫"日历视图"——旁边 7d / 14d 已经占着"日历视图"这个前缀了，
+   * 名字就按这个概念取，别叫"日历视图"——旁边 7d 那一屏已经叫「日历视图」了，
    * 而这一屏跟"一个月"没有关系。
    */
   calendarFlow: '连续日历',
@@ -115,8 +115,6 @@ const ZH = {
   next7Sub: '按日期分组，逾期置顶',
   calendar7: '日历视图（7d）',
   calendar7Sub: '逾期 + 未来 7 天，4 列 × 2 行',
-  calendar14: '日历视图（14d）',
-  calendar14Sub: '逾期 + 未来 14 天，5 列 × 3 行',
   next30: '最近 30 天',
   next30Sub: '一个月内的安排，按日期分组',
   all: '全部任务',
@@ -272,8 +270,6 @@ const EN: typeof ZH = {
   next7Sub: 'Grouped by date, overdue on top',
   calendar7: 'Calendar (7d)',
   calendar7Sub: 'Overdue + the next 7 days, 4 × 2',
-  calendar14: 'Calendar (14d)',
-  calendar14Sub: 'Overdue + the next 14 days, 5 × 3',
   next30: 'Next 30 days',
   next30Sub: 'The month ahead, grouped by date',
   all: 'All tasks',

@@ -80,7 +80,7 @@ const dayFull = (ts: number) => S.todaySub(absDay(ts), weekday(ts))
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
 /**
- * 不做清单，所以就这 9 项。名字和副标题都从字典取，键名和视图 id 对齐。
+ * 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐。
  * id 那一层在 ipc 里（主进程要拿它校验 ui.json、分窗口大小），这里只管怎么画。
  */
 const VIEWS = [
@@ -88,7 +88,6 @@ const VIEWS = [
   { id: 'next7', ico: '▤', sub: () => S.next7Sub },
   { id: 'next30', ico: '▦', sub: () => S.next30Sub },
   { id: 'calendar7',  ico: '▥', sub: () => S.calendar7Sub },
-  { id: 'calendar14', ico: '▩', sub: () => S.calendar14Sub },
   // 「连续日历」：日子一天接一天铺下去，上下无限滚，每行放几个由用户定（见 monthCols）。
   // 逾期不单独占一格（它们就在原来那天，往上滚就看见了），所以副标题只说怎么用
   { id: 'calendarFlow', ico: '▧', sub: () => S.calendarFlowSub },
@@ -98,25 +97,24 @@ const VIEWS = [
 ] as const satisfies readonly { id: ViewId; ico: string; sub: () => string }[]
 
 /**
- * 两个固定日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
- * 7 天 = 逾期 + 7 = 8 格，铺成 4 列 × 2 行；14 天 = 15 格，铺成 5 列 × 3 行 ——
- * 都刚好铺满，不留半行。列数写进 --cal-cols，布局在 index.html 的 .list.cal 里。
+ * 固定日历视图：铺几天（不含第一格"已逾期"）、一行放几列。
+ * 7 天 = 逾期 + 7 = 8 格，铺成 4 列 × 2 行，刚好铺满，不留半行。
+ * 列数写进 --cal-cols，布局在 index.html 的 .list.cal 里。
  *
  * 连续日历不在这儿：它没有"铺几天"这回事（铺多久由滚动决定，见下面的 FLOW_*），
  * 列数也不是固定值（见 monthCols）。
  */
 const CAL: Partial<Record<ViewId, { days: number; cols: number }>> = {
   calendar7: { days: 7, cols: 4 },
-  calendar14: { days: 14, cols: 5 },
 }
 /**
  * 「连续日历」的视图 id。它不在 CAL 里 —— 那两个字段（days / cols）对它没意义：
  * 铺多久由滚动决定（见下面的 FLOW_*），列数由用户定（见 monthCols）。
- * 但"铺格子"这件事它和上面两屏是一路的，所以 isCalView 得把它算进去 ——
+ * 但"铺格子"这件事它和上面那一屏是一路的，所以 isCalView 得把它算进去 ——
  * 点任务不自动展开详情栏那条规矩跟着它走。
  */
 const CAL_FLOW: ViewId = 'calendarFlow'
-/** 这一屏是不是"铺格子"的日历（7d / 14d / 连续日历）。它们点任务不自动展开详情栏 */
+/** 这一屏是不是"铺格子"的日历（7d / 连续日历）。它们点任务不自动展开详情栏 */
 const isCalView = (v: ViewId) => !!CAL[v] || v === CAL_FLOW
 
 let tasks: Task[] = []
@@ -131,7 +129,7 @@ let view: ViewId = DEFAULT_VIEW
  * 日历视图要不要显示已完成的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
  * 打开后打过钩的也留在格子里，**仍然挂在原来安排的那天**（不是完成那天）——
  * 安排不该因为事情提前做完就挪位置，完成时间由行上那个 ✓ 说。状态存在 ui.json 里，
- * 和语言、主题一样是本机偏好，**四个日历视图共用这一个开关**（7d / 14d / 连续日历）。
+ * 和语言、主题一样是本机偏好，**两个日历视图共用这一个开关**（7d / 连续日历）。
  */
 let showDone = false
 /**
@@ -158,7 +156,7 @@ let sideCollapsed = false
 /**
  * 详情栏收起没有。按视图分组各记一份（键同窗口大小：其余视图 / 日历），
  * 在日历里收起详情看格子，切回列表再回来它还是收着的。
- * **三个日历视图共用日历那一份**：7d 里收起了详情，切到 14d、自定义也是收起的。
+ * **两个日历视图共用日历那一份**：7d 里收起了详情，切到连续日历也是收起的。
  * detailCollapsed 是**当前这一屏**的生效值，切视图时从 detailBySlot 里换一份。
  * 缓存在这里而不是每次问主进程：切视图要同步画，等一次往返会先闪一帧没收起的界面。
  */
@@ -179,6 +177,13 @@ let pendingNoteCaret: number | null = null
  * 而 ensureSelection 之后就不会再改主意了。
  */
 let ready = false
+
+/**
+ * 界面上的"今天"是按哪一天画的。跨天时靠它认（见 followToday）：
+ * 所有"今天 / 明天 / 昨天"、各视图筛到哪天为止、连续日历那一道高亮，
+ * 都是 render() 里拿 today() 现算的 —— 没人重画就永远停在打开的那一天。
+ */
+let shownDay = today()
 
 /**
  * 上次选中的任务由主进程存在 userData 里（不用 localStorage：Chromium 的刷盘时机
@@ -296,11 +301,11 @@ function pick(v: ViewId): Task[] {
   /**
    * 「连续日历」：**所有排过期的任务**都进来，逾期的也照旧待在自己那天 ——
    * 这一屏本来就该是这个样子：往上滚几天就看见拖了很久的事，不用另开一格收着
-   *（7d / 14d 那种"逾期单独占一格"是给固定几天的小窗口用的，这一屏没有"第一格"）。
+   *（7d 那种"逾期单独占一格"是给固定几天的小窗口用的，这一屏没有"第一格"）。
    *
    * 所以这里**不按铺出来的日子筛**：铺到哪一天是滚动的事（见 FLOW_MAX_DAYS），
    * 拿它筛的话侧栏那个条数会跟着滚动一路变；格子按天分桶，范围外的自然分不进去。
-   * 没定日期的挂不到日历上（和 7d / 14d 一样），入口在别的视图。
+   * 没定日期的挂不到日历上（和 7d 一样），入口在别的视图。
    *
    * 「显示已完成」打开后，打过钩的也进来，仍然挂在**原来安排的那天**（同上）。
    */
@@ -373,7 +378,7 @@ function group(list: Task[], v: ViewId): Group[] {
  * day 是"这一格是哪天"（那天的零点），只有真实的日期格才有；"已逾期"那格跨好几天，
  * 没有具体哪一天，所以是 undefined —— 行上要不要补完成日期就看它（见 calRow）。
  * compact 是"这格特别窄"（连续日历，7 列时一格才 66 像素）：行上的字要按最短的写法来，
- * 装不下的完整说法留给 hover 的 title（同样见 calRow）。7d / 14d 那两屏不设它。
+ * 装不下的完整说法留给 hover 的 title（同样见 calRow）。7d 那屏不设它。
  */
 type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?: boolean;
                  today?: boolean; day?: number; compact?: boolean }
@@ -381,7 +386,7 @@ type CalCell = { key: string; label: string; wd: string; items: Task[]; overdue?
  * 一格里的先后：未完成在上、已完成沉底（见下），未完成那一段按**手排的 order** ——
  * 时间只当标签，"9:00 也可能排在 14:00 下面"，这是拖动排序换来的代价。
  * 已完成内部反过来 —— **最后完成的排最前**，刚了结的事一眼就能看到。
- * 三个日历视图共用（7d / 14d 和自定义），三处的格子顺序才不会各走各的。
+ * 两个日历视图共用（7d / 连续日历），两处的格子顺序才不会各走各的。
  *
  * `imp` 打开"重要置顶"，**只有「已逾期」那一格用**（见 calendarCells）：那格跨好几天，
  * 手排的 order 在那儿没有可比性、也当不了拖动落点（见上面 byOrder 那段）。日期格里
@@ -649,6 +654,9 @@ function keepScroll(): () => void {
 }
 
 function render() {
+  // 这一次重画是按哪一天画的。跨天刷新靠它认（见 followToday）—— 其它原因
+  // （同步、勾选、换视图）触发的重画也走这儿，顺带就把日期翻篇了
+  shownDay = today()
   const restoreTitleEdit = keepTitleEdit()
   const restoreScroll = keepScroll()
   $('nav').innerHTML = VIEWS.map(v => {
@@ -693,7 +701,7 @@ function render() {
   $('list').classList.toggle('alldone', doneList)
   /**
    * 日历视图：同一批任务（逾期 + 今天起 N 天）不走"分组标题 + 一列任务"那条路，
-   * 摊成日期格子（7d 是 4 列 × 2 行，14d 是 5 列 × 3 行，列数写进 --cal-cols）。
+   * 摊成日期格子（7d 是 4 列 × 2 行，列数写进 --cal-cols）。
    * 搜索时仍然回到普通列表 —— 搜索结果按相关度排，摊到日历上没意义。
    * 空库也不走下面那个"空状态"分支：日历把格子画出来本身就是有用的信息。
    */
@@ -703,17 +711,17 @@ function render() {
    * 搜索时和别处一样退回普通列表，所以也带 !results。
    */
   const flow = !results && view === CAL_FLOW
-  // 「显示已完成」四个日历视图都有。7d / 14d 的格子是"逾期 + 未来 N 天"，连续日历是所有
+  // 「显示已完成」两个日历视图都有。7d 的格子是"逾期 + 未来 N 天"，连续日历是所有
   // 排过期的日子；打开后打过钩的都留在**原来安排的那天**（见 pick / calendarCells）。
   // 搜索结果是普通列表，这一处把它收起来
   $('donesw').hidden = !cal && !flow
   setDoneSwitch()
-  // 「推演」只有连续日历这一屏有（另外两屏天数固定，铺不铺都行；见 projectDays）
+  // 「推演」只有连续日历这一屏有（7d 天数固定，铺不铺都行；见 projectDays）
   $('projectsw').hidden = !flow
   setProjectSwitch()
   $('list').classList.toggle('cal', !!cal)
   $('list').classList.toggle('calflow', flow)
-  // 连续日历的顶栏（月份 / 每行几列 / 回到今天）。另外两屏没有这套东西，整块收起来
+  // 连续日历的顶栏（月份 / 每行几列 / 回到今天）。7d 没有这套东西，整块收起来
   const tools = $('caltools') as HTMLElement
   tools.innerHTML = flow ? calTools() : ''
   tools.hidden = !flow
@@ -740,7 +748,16 @@ function render() {
     // 一行几个格子写进 --cal-cols，.calflowgrid 按它铺
     $('list').style.setProperty('--cal-cols', String(monthCols))
     renderDetail()
-    const fresh = flowFresh || !flowBuilt() || flowBuiltCols !== monthCols
+    /**
+     * 跨天重画时**不重铺**：已经铺好的日子、滚动位置都原地不动，只把"今天"那道高亮
+     * 挪到新的一天（前一晚停在 10-16，第二天那道线就在 10-17 那格，视野不跳）。
+     * 只有一种例外：新的一天已经不在铺出来的这一段里了（这一屏连续开了几十天没离开，
+     * 铺的范围是有尽头的）—— 那时整屏连"今天"都没有，只能整套重铺。
+     */
+    const built = flowBuilt()
+    const t0 = today()
+    const outOfSpan = built && (t0 < flowFrom || t0 > addDays(flowFrom, flowDays - 1))
+    const fresh = flowFresh || !built || flowBuiltCols !== monthCols || outOfSpan
     flowFresh = false
     if (fresh) buildFlowSpan(visible)
     else {
@@ -831,7 +848,7 @@ function row(t: Task, doneList = false): string {
   </div>`
 }
 
-/** 日历视图整块：格子按 --cal-cols 铺开。7d / 14d 的第一格是"已逾期"，自定义没有那格 */
+/** 日历视图整块：格子按 --cal-cols 铺开。7d 的第一格是"已逾期"，连续日历没有那格 */
 function calendarGrid(cells: CalCell[]): string {
   return cells.map(c =>
     // data-day：拖动改期时的落点靠它认。逾期那格是 'overdue'，只能当起手、不能当落点
@@ -856,7 +873,8 @@ function calendarGrid(cells: CalCell[]): string {
 function calTools(): string {
   // 月份跟着滚动走（onFlowScroll 只换那一行字，不整块重画）。
   // flowLabel 是 buildFlowSpan 摆好的，而顶栏比那一步先画（render：先顶栏、再铺格子），
-  // 所以第一帧它还是 0 —— 先报今天那个月，别让顶栏闪一下 NaN
+  // 所以第一帧它还是上一屏那个月 —— 先报今天那个月，别让顶栏闪一下 NaN；
+  // buildFlowSpan 铺完、滚到今天那一行之后会把这一行字补对（见那里的 .calmonth）
   const cols = `<label class="calcolsel"><span>${esc(S.calendarColsLabel)}</span>` +
     `<select id="calcols">${Array.from({ length: MONTH_CAL_COLS.max - MONTH_CAL_COLS.min + 1 },
       (_, i) => MONTH_CAL_COLS.min + i).map(n =>
@@ -875,13 +893,17 @@ const monthLabel = (ts: number) => lang === 'en'
   : `${new Date(ts).getFullYear()}年${new Date(ts).getMonth() + 1}月`
 
 /* ── 「连续日历」：日子一天接一天铺下去，上下无限滚 ──
- * **不分月**：没有"一月一块"，也没有月初月末补出来的相邻月格子 —— 从今天起一天接一天，
+ * **不分月**：没有"一月一块"，也没有月初月末补出来的相邻月格子 —— 日子一天接一天排，
  * 往前能一直看到几年前、往后一直看到几年后。逾期不单独占一格：它们就在自己原来那天，
  * 往上滚就看见了。
  *
  * 每行放几天由用户定（monthCols，3~7）—— 那只是"一行摆几个格子"，**7 列没有任何特殊含义**
- *（"周一到周日各占一列 + 顶上一条吸顶周几表头"是 7d / 14d 那两屏的事，这一屏列和星期
+ *（"周一到周日各占一列 + 顶上一条吸顶周几表头"是 7d 那一屏的事，这一屏列和星期
  * 本来就不对齐）。哪一天是几月几号，靠**每格自己带着的完整日期**认（见 dayCellHtml）。
+ *
+ * 铺法**不跟着今天跑**：2026-01-01 固定是网格的第一列（见 FLOW_ANCHOR_DAY / flowCol），
+ * 任何一个日期在第几列只由它离基准多少天决定。否则每次从今天往回让一整行，同一个日期
+ * 换一天打开就会换一列，跨天重画也会让整屏数字挪位置。
  *
  * 不做"一次画十年"：每格都要装任务行，画十年就是几千个格子、上万个节点，进这一屏那一下
  * 就不轻了。所以按需接（见 extendFlow）。
@@ -896,9 +918,32 @@ const FLOW_MAX_DAYS = 366 * 5
 const FLOW_EDGE = 400
 
 /**
+ * 排版的固定对齐基准：2026-01-01。它在网格里固定是每行的第一列，任何一天在第几列
+ * 只由"离它多少天"决定（见 flowCol），和今天是哪天、从哪一天打开这一屏都无关。
+ *
+ * 它只是对齐用的原点，**不是"最早的一天"**：往前仍然可以一直滚到 2026 年之前，
+ * 那些日期按负偏移取模，照样落在固定的列上。
+ */
+const FLOW_ANCHOR_DAY = (() => {
+  const d = new Date(2026, 0, 1)
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY
+})()
+/**
+ * 这一天在"2026-01-01 是第一列"的网格里是第几列（0 ~ cols-1）。
+ * 日期相减走 UTC 的那套年月日，再除一天：本地零点跨夏令时差 23/25 小时，
+ * 直接按毫秒差除 86400000 会少算或多算一天。
+ */
+const flowCol = (ts: number, cols: number): number => {
+  const d = new Date(ts)
+  const n = (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY - FLOW_ANCHOR_DAY) % cols
+  return n < 0 ? n + cols : n
+}
+
+/**
  * 这一段连续的日子：从哪天画起（零点）、一共几天。**总是列数的整数倍**，行才是满的。
  * flowBack 是"往前铺到了离今天多少天"——今天就在这一段里，"回到今天"和接日子的边界都按它算。
  * 进这一屏时特意比今天早一整行：今天顶上还留着几天，往回滚不用先等一次"接"。
+ * flowFrom 永远落在基准那一列上（见 flowCol），这样今天固定在第 monthCols + flowCol 格。
  */
 let flowFrom = 0
 let flowDays = 0
@@ -1018,7 +1063,7 @@ function projRow(p: Proj): string {
  * 换个类名就等于把那几套交互全丢了。
  *
  * **每格自己带完整日期**（2026-10-01）：这一屏不分月、也没有顶上那条周几表头，
- * 不写全就不知道这一格是哪天。表头和 7d / 14d 那两屏是**同一套**（.calhead）：
+ * 不写全就不知道这一格是哪天。表头和 7d 那屏是**同一套**（.calhead）：
  * 上面一行日期、下面一行周几 + 条数，两行分开才不会互相挤（见 index.html）。
  * 周末那两天日期换成强调色（.calday.we）—— 一屏数字扫下来，就靠它认出周末。
  *
@@ -1029,7 +1074,8 @@ function projRow(p: Proj): string {
  *
  * 今天那一格由 .calcell.today 点亮表头那一条，日期也跟着变成强调色。
  *
- * **行不缩档**（不设 cell.compact）：这一屏的格子和 14d 一样宽，任务行就该和它长得一样 ——
+ * **行不缩档**（不设 cell.compact）：这一屏的格子是正式的日历格，任务行就该
+ * 和 7d 那一屏长得一样 ——
  * 同样的 17px 勾选圈、13.5px 标题、同样的元信息写法。
  *
  * 真实任务在前、推演在后：一格里先看"这天真有什么事"，再看"周期任务往后会排到这天"。
@@ -1051,7 +1097,7 @@ function dayCellHtml(day: number, ctx: CalCtx): string {
     `<div class="calhead"><span class="dl">${esc(S.cellDay(new Date(day)))}</span>` +
     // 周几写全（"周一"），不缩成一个字：这一屏没有周几表头，一个字容易看成一横
     `<span class="ws"><span class="wd">${esc(weekday(day))}</span>` +
-    // 条数紧跟在周几后面（和 14d 同一个位置）：一眼看出"这天还有几条"。
+    // 条数紧跟在周几后面（和 7d 同一个位置）：一眼看出"这天还有几条"。
     // **只在推演开着时报**：这个数是"真实 + 推演"合起来看的（推演那部分压淡一档、
     // 前面带个 +），不推演的时候光报真实条数就成了纯噪声 —— 几条任务格子里本来就数得清。
     // 关掉推演，表头就只剩日期 + 周几（见 projectRepeat）
@@ -1091,8 +1137,9 @@ function rebuildFlow(list: Task[]): void {
 }
 
 /**
- * 滚到今天那一格 —— 进这一屏的第一件事。今天在第一行，所以这一格滚到顶上就对了
- *（这一屏没有吸顶元素要减，顶栏长在列表外面）。
+ * 滚到今天那一格 —— 进这一屏的第一件事。按格子的上边对齐列表顶：
+ * 今天所在的那一行成为可视区第一行，今天落在它固定的那一列上（见 flowCol），
+ * 不再被挪到最左边（这一屏没有吸顶元素要减，顶栏长在列表外面）。
  *
  * 走"拿到手的位置再拼回滚动坐标"，不用 offsetTop：那个元素的 offsetParent 不一定是 #list，
  * 减出来会偏小半屏。
@@ -1106,25 +1153,34 @@ function scrollToToday(): void {
 }
 
 /**
- * 进这一屏（从别的列表切过来、或者重开应用落在这儿）：重铺一段，把**今天那一格**摆到
+ * 进这一屏（从别的列表切过来、或者重开应用落在这儿）：重铺一段，把**今天那一行**摆到
  * 可视区顶上。每次都重铺而不是接着上次那一段：滚动位置本来就留不住，重铺最省事，
  * 也顺带把很久没打开、已经过去的那些日子收回来。
+ *
+ * 今天落在哪一列由固定基准决定（见 flowCol），所以同一天不管什么时候打开都在同一列。
+ * 往前留一整行，往回滚不用先等一次"接"。
  */
 function buildFlowSpan(list: Task[]): void {
   const t0 = today()
-  // 提前一整行：今天顶上还留着几天，往回滚不用先等一次"接"
-  flowBack = monthCols
+  const col = flowCol(t0, monthCols)
+  flowBack = monthCols + col
   flowFrom = addDays(t0, -flowBack)
   flowDays = FLOW_INIT_ROWS * monthCols
-  flowLabel = t0
+  // 可视区顶上那一行是从今天往回退 col 天开始的那一行（todayTop 对齐的是格子顶边，
+  // 同一行的格子同高）。顶栏在这之前已经画好了，下面补一次那一行字
+  flowLabel = addDays(t0, -col)
   rebuildFlow(list)
   scrollToToday()
+  const box = document.querySelector<HTMLElement>('#caltools .calmonth')
+  if (box) box.textContent = monthLabel(flowLabel)
 }
 
 /**
  * 滚到上/下边就往前/往后接一段日子。
  *
- * 接的一律是**整行**（列数的整数倍），这样新接的那几行和原来的行才对得齐。
+ * 接的一律是**整行**（列数的整数倍）：新接的那几行和原来的行才对得齐，往前接时
+ * 第一格还得落在 2026-01-01 那一列上（见 flowCol），否则整屏日期会错位。
+ * 五年的靠山不是列数的整数倍，所以接之前先把可接的天数向下取整到整行。
  * 往上接**必须把 scrollTop 补上新增的高度**：内容在顶部长出来，不补的话用户正看着的
  * 日期会整体往下跳一大截。接完就离边远了，回路自然收住 —— 接一次长出来一千多像素，
  * 离边不再是 FLOW_EDGE 以内，再滚一下也不会又接一次。
@@ -1137,23 +1193,29 @@ function extendFlow(): void {
   const step = FLOW_STEP_ROWS * monthCols
   const fwdSpan = flowDays - 1 - flowBack        // 往后已经铺到离今天多少天
   if (list.scrollTop < FLOW_EDGE && flowBack < FLOW_MAX_DAYS) {
-    const n = Math.min(step, FLOW_MAX_DAYS - flowBack)
-    const from = addDays(flowFrom, -n)
-    const before = list.scrollHeight
-    grid.insertAdjacentHTML('afterbegin',
-      flowBlockHtml(from, n, ctxOf(flowTasks, from, addDays(from, n - 1))))
-    flowFrom = from
-    flowBack += n
-    flowDays += n
-    list.scrollTop += list.scrollHeight - before
+    const room = FLOW_MAX_DAYS - flowBack
+    const n = Math.min(step, room - room % monthCols)
+    if (n > 0) {
+      const from = addDays(flowFrom, -n)
+      const before = list.scrollHeight
+      grid.insertAdjacentHTML('afterbegin',
+        flowBlockHtml(from, n, ctxOf(flowTasks, from, addDays(from, n - 1))))
+      flowFrom = from
+      flowBack += n
+      flowDays += n
+      list.scrollTop += list.scrollHeight - before
+    }
   }
   const left = list.scrollHeight - list.scrollTop - list.clientHeight
   if (left < FLOW_EDGE && fwdSpan < FLOW_MAX_DAYS) {
-    const n = Math.min(step, FLOW_MAX_DAYS - fwdSpan)
-    const from = addDays(flowFrom, flowDays)
-    grid.insertAdjacentHTML('beforeend',
-      flowBlockHtml(from, n, ctxOf(flowTasks, from, addDays(from, n - 1))))
-    flowDays += n
+    const room = FLOW_MAX_DAYS - fwdSpan
+    const n = Math.min(step, room - room % monthCols)
+    if (n > 0) {
+      const from = addDays(flowFrom, flowDays)
+      grid.insertAdjacentHTML('beforeend',
+        flowBlockHtml(from, n, ctxOf(flowTasks, from, addDays(from, n - 1))))
+      flowDays += n
+    }
   }
 }
 
@@ -2324,7 +2386,7 @@ document.addEventListener('click', async (e) => {
 /**
  * 日历视图的「显示已完成」开关。打开后格子里还会列出打过钩的任务，它们仍在**原来安排
  * 的那天**（安排不因为提前做完就挪位置）；行上给的是完成时间、标题划删除线。
- * 状态存 ui.json，三个日历视图共用这一个开关。
+ * 状态存 ui.json，两个日历视图共用这一个开关。
  */
 document.addEventListener('click', async (e) => {
   if (!(e.target as HTMLElement).closest('[data-donesw]')) return
@@ -2415,6 +2477,27 @@ kapi.onSyncBusy(showSync)
 // 系统外观变了（或别处改了 themeSource）：把开关挪过去。配色 CSS 自己会刷
 kapi.onThemeChanged((next) => { theme = next; setThemeSwitch() })
 kapi.onTasksChanged((t) => { tasks = t; if (ready) render() })
+
+/**
+ * 跨天刷新：界面上的"今天"是 today() 现算的，但没人重画就会一直停在打开的那一天
+ *（开着过夜，第二天每个页面上的"今天"还是昨天）。这里盯着本地日期，变了就整屏重画一次。
+ *
+ * 用轮询而不是只定一个"到午夜的 setTimeout"：合盖休眠、系统时钟被改、时区切换都会让
+ * 那一次定时落空或落偏。半分钟问一次很便宜；窗口重新拿到焦点、从后台回到前台时也问一次
+ * —— 后台窗口的定时器会被 Chromium 节流，不能只靠它。
+ *
+ * 重画时**不重铺连续日历**（见 render 的 flow 分支）：日子和滚动位置都不动，
+ * 只让"今天"那道高亮自然挪到新的一天。
+ */
+const DAY_RECHECK = 30_000
+function followToday() {
+  if (!ready || !vault) return        // boot 还没画完 / 还在引导页上：没有日期可翻
+  if (today() === shownDay) return
+  render()                            // render 里会把 shownDay 更新成当天
+}
+setInterval(followToday, DAY_RECHECK)
+window.addEventListener('focus', followToday)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) followToday() })
 
 /** 没有库时先讲清楚为什么要选文件夹，再由用户点按钮触发系统对话框 */
 function showWelcome(on: boolean) {

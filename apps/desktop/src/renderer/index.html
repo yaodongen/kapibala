@@ -154,7 +154,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
                   background:var(--bg); color:var(--text); font-size:12.5px }
 
 /* ── 日历视图：按天铺成格子，列数由 app.ts 写进 --cal-cols ──
-   7d 是 4 列 × 2 行（逾期 + 7 天 = 8 格），14d 是 5 列 × 3 行（15 格）。
+   7d 是 4 列 × 2 行（逾期 + 7 天 = 8 格）。
    第一格固定是已逾期，其余按天排。格子跟着列表区宽度平分，列总是并排 ——
    窗口窄了每格就窄一点，不横向滚；行放不下就整块上下滚。
    底部留半屏空白：最后一行才能滚到窗口中间来看，而不是贴在最底下 */
@@ -169,13 +169,13 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
   font-size:12px; font-weight:600; color:var(--dim); letter-spacing:.02em;
 }
 .calhead .dl{ color:var(--text) }
-/* 第二行：周几 + 条数。格子窄（14d 只有 90 来像素），和日期挤一行会折得七零八落，
+/* 第二行：周几 + 条数。格子窄（5 列时只有 90 来像素），和日期挤一行会折得七零八落，
    索性固定分两行，每格的表头高度才对得齐 */
 .calhead .ws{ display:flex; align-items:baseline; gap:6px; font-size:11px; font-weight:400 }
 .calhead .n{ font-variant-numeric:tabular-nums }
 /* 连续日历的表头：日期是"2026-10-01"这种长串，格子窄的时候不许折成两行
    （折了这一格的表头就比别人高一截）；让位交给下面那两条 @container。
-   letter-spacing 归零：14d 那点 0.02em 是给"今天/明天"这种两三个字的标签调的，
+   letter-spacing 归零：0.02em 那点字距是给"今天/明天"这种两三个字的标签调的，
    放在 10 个字符的日期上就是每个字符多 0.24px、一共多出 2.4px —— 5 列时正好差这一点 */
 .calday .calhead{ white-space:nowrap; overflow:hidden; letter-spacing:normal }
 /* 逾期那格和"今天"那格各给一个颜色，一眼能找到自己站在哪 */
@@ -193,7 +193,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
    **底下两个角要留 7px 圆角**：线两头会顺着圆角往上翘一小段，像一道软笔触；
    去掉圆角就是一根直杠（`border-bottom:2px` 那种"下划线"）。圆角是这一版的全部意思，
    别再当成多余的东西删掉 —— 只给下面两个角，上面那两角看不出来（表头没有底色、没有上边框）。
-   三屏日历共用（.calcell 是它们共同的类）：7d / 14d 的表头是"今天 周一 12"，
+   两个日历视图共用（.calcell 是它们共同的类）：7d 的表头是"今天 周一 12"，
    连续日历里是"2026-10-01 / 周一 3"那两行（同一套 .calhead） */
 .calcell.today .calhead{ border-bottom-color:var(--accent);
                          border-bottom-left-radius:7px; border-bottom-right-radius:7px;
@@ -253,7 +253,7 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
                            overflow:hidden; text-overflow:ellipsis }
 
 /* ── 「连续日历」：日子一天接一天铺下去，上下无限滚，每行放几列由用户定（--cal-cols） ──
-   和上面 7d / 14d 那两屏共用 .calcell / .calrow / data-day 那一套
+   和上面 7d 那一屏共用 .calcell / .calrow / data-day 那一套
    （拖动改期、落点高亮、点任务看详情都按它们认），所以这里只管"格子怎么排"。
    **不分月**：没有"一月一块"，也没有月初月末补出来的相邻月格子 —— 就是一片连续的格子，
    列数 3~7（默认 5，见 ipc 的 MONTH_CAL_COLS）只决定一行摆几个。列和星期不对齐，
@@ -262,8 +262,8 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
 .list.calflow{ padding:12px 20px 40px }
 .calflowgrid{ display:grid; grid-template-columns:repeat(var(--cal-cols, 5), minmax(0, 1fr));
               gap:4px 6px; align-content:start }
-/* 一天的格子。**长得和 7d / 14d 那两屏一样**：没有底色（列表的白底直接透出来）、
-   没有内边距，表头就是 .calhead 那一套（日期一行、周几 + 条数一行）—— 三屏的格子看着是一路的。
+/* 一天的格子。**长得和 7d 那屏一样**：没有底色（列表的白底直接透出来）、
+   没有内边距，表头就是 .calhead 那一套（日期一行、周几 + 条数一行）—— 两屏的格子看着是一路的。
    等高靠 grid 默认的 align-items:stretch：任务多的那格会把整行撑高，一行里的格子看着才齐。
    min-height 让空的一天也有分量，不至于缩成一条线。
    **container-type 让表头能按"这格实际有多宽"让位**（见下面那两条 @container）：
