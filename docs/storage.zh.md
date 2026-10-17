@@ -433,7 +433,7 @@ type Task = {
   reminders: Reminder[]   // 一个任务可以有多个提醒
   repeat?: RepeatRule     // 见 §7.2
   order: string           // 分数索引，见 §7.3
-  inProgress: boolean     // 正在做。和 completedAt 无关，可以同时有多条
+  inProgress: boolean     // 正在做。和 completedAt 无关，可以同时有多条；标记时顺手把 order 写到那一天：本来就重要的顶到重要任务最前，否则排在最后一个重要任务之后
   important: boolean      // 重要。界面给左侧一道红竖条 + 极淡红底，标记时顺手把 order 写到那一天最前；周期任务派生下一个实例时继承它
   completedAt?: number
   createdAt: number

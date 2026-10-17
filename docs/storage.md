@@ -436,7 +436,9 @@ type Task = {
   reminders: Reminder[]   // a task can have several reminders
   repeat?: RepeatRule     // see §7.2
   order: string           // fractional index, see §7.3
-  inProgress: boolean     // being worked on; independent of completedAt, several at once is fine
+  inProgress: boolean     // being worked on; independent of completedAt, several at once is fine;
+                          // marking it writes the order — ahead of the important tasks if the task
+                          // is already important, otherwise just below them
   important: boolean      // starred: red bar + pale red row, and marking it writes the order to the
                           // front of that day; the next instance of a repeating task inherits it
   completedAt?: number

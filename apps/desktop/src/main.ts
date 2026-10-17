@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWat
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
-import { compareOrder, orderBetween, orderKey, spreadOrders } from '@kapibala/core/order'
+import { compareOrder, orderKey, spreadOrders } from '@kapibala/core/order'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
 import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, LEGACY_SLOT_KEYS,
          normMonthCalCols, platformOf, restorableView, viewSlot, PLATFORM_ARG,
@@ -11,6 +11,7 @@ import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, LEGACY_SLO
          type WinSlot } from '@kapibala/ipc'
 import { isLang, langOf, t, type Lang } from './i18n.ts'
 import { log, logPath, readLog } from './log.ts'
+import { pinKey } from './pin.ts'
 
 process.on('uncaughtException', e => log('error', '未捕获异常', e))
 process.on('unhandledRejection', e => log('error', '未处理的 Promise 拒绝', e))
@@ -353,22 +354,28 @@ const write = <T,>(fn: (s: Store) => Promise<T>) => {
   return withLock(s.vault.entry.id, () => fn(s)).then(r => { push(); return r })
 }
 
-/** 本地时区的零点。渲染进程那份是给分组用的；主进程要它，是因为「标记重要」这个动作
- *  由原生右键菜单发起（见 toggleImportant），而落点得按"哪一天"算 */
+/** 本地时区的零点。渲染进程那份是给分组用的；主进程要它，是因为「标记重要」/「标记进行中」
+ *  这两个动作由原生右键菜单发起（见 toggleImportant / toggleInProgress），而落点得按"哪一天"算 */
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
 
 /**
- * 「标记重要」要连带写的那条 order：**把它插到所在那一天的最前面**，等于替用户拖了一次。
+ * 标记「重要」/「进行中」要连带写的那条 order：**等于替用户拖了一次**。
+ *
+ * `front` 打开 = 顶到那一天最前面（比所有重要任务都靠前），关着 = 插到最后一个重要任务
+ * 之后、其余任务之前。传什么只看**标记之后这条是不是重要任务**（落点规则见 pin.ts 的 pinCut）：
+ *   - 标「重要」→ true
+ *   - 标「进行中」→ 本来就重要才是 —— 一条已经在做的重要任务顶到重要任务的最前面
  *
  * 为什么不做成"显示时把重要的排前面"：位置得是数据。两台 Mac 上看到的先后、以及用户
  * 之后自己拖出来的顺序，都只能有一条真相 —— 写进 order 之后，用户想把它拖回下面去就
- * 真的留在下面（那是他明确表达的意愿，见 app.ts 的 applyCalDrop）。
+ * 真的留在下面（那是他明确表达的意愿，见 app.ts 的 applyCalDrop）。进行中同理：
+ * 取消标记时只清标记、位置一个字节都不动（它当初是自己跳上去的，想挪回去该由用户拖）。
  *
  * 没有日期的不写（"未安排"那一组）：那一组和"已逾期"一样按别的东西排、也拖不动，
- * 界面直接按「重要」置顶（见 app.ts 的 impFirst）。逾期的照写不误 —— 它在列表里挂在
- * "已逾期"那一组，可日历里还钉在原来那天，这个 key 决定它在那一格里的位置。
+ * 界面直接按「重要 → 进行中」置顶（见 app.ts 的 pinFirst）。逾期的照写不误 —— 它在列表里
+ * 挂在"已逾期"那一组，可日历里还钉在原来那天，这个 key 决定它在那一格里的位置。
  */
-function importantOrder(s: Store, id: string): FieldOpIpc[] {
+function pinOrder(s: Store, id: string, front: boolean): FieldOpIpc[] {
   const t = s.task(id)
   if (!t || t.startAt === undefined) return []
   const day = dayStart(t.startAt)
@@ -378,16 +385,20 @@ function importantOrder(s: Store, id: string): FieldOpIpc[] {
     .filter(x => x.id !== id && !x.deleted && x.completedAt === undefined
                  && x.startAt !== undefined && dayStart(x.startAt) === day)
     .sort(compareOrder)
-  const key = orderBetween(null, peers[0]?.order ?? null)
-  // 再也挤不出空位了（老库的 16 位时间戳 key 挨得极近）：按"重要在前"把这一格重铺一遍，
+  // 落点规则本身在 pin.ts 里（渲染进程"未安排""已逾期"那几处显示时也用同一份）
+  const { cut, key } = pinKey(peers, front)
+  // 再也挤不出空位了（老库的 16 位时间戳 key 挨得极近）：按同一个落点把这一格重铺一遍，
   // 和拖拽那条路遇到同一情况时的做法一样
-  if (key === null)
-    return spreadOrders([id, ...peers.map(x => x.id)]).map(r => ({ id: r.id, f: 'order', val: r.key }))
+  if (key === null) {
+    const ids = peers.map(x => x.id)
+    ids.splice(cut, 0, id)
+    return spreadOrders(ids).map(r => ({ id: r.id, f: 'order', val: r.key }))
+  }
   return [{ id, f: 'order', val: key }]
 }
 
 /**
- * 切换「重要」。标记上时连带把它排到那一天最前面（见 importantOrder）；取消时**只清标记、
+ * 切换「重要」。标记上时连带把它排到那一天最前面（见 pinOrder）；取消时**只清标记、
  * 位置一个字节都不动** —— 它当初是自己跳上去的，现在想挪回去该由用户拖（见 app.ts）。
  */
 const toggleImportant = (id: string) => write(async s => {
@@ -395,7 +406,26 @@ const toggleImportant = (id: string) => write(async s => {
   if (!t) return
   const on = !t.important
   const rows: FieldOpIpc[] = [{ id, f: 'important', val: on }]
-  if (on) rows.push(...importantOrder(s, id))
+  if (on) rows.push(...pinOrder(s, id, true))
+  await s.setMany(rows)
+})
+
+/**
+ * 切换「进行中」。标记上时插到那一天最后一个重要任务之后（见 pinOrder）—— 重要永远在
+ * 上面，其余的在它下面。**本来就重要的那条例外**：再标 Doing 就顶到最重要任务的最前面
+ *（`t.important` 传成 front），一条已经在做的重要任务就是当下最该露头的那条。
+ *
+ * 取消时同样只清标记、位置不动。
+ *
+ * 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），「进行中」是临时状态
+ * （勾完成、删进垃圾桶都会自动收工），所以它不往派生实例上传，也不用管派生那条路。
+ */
+const toggleInProgress = (id: string) => write(async s => {
+  const t = s.task(id)
+  if (!t) return
+  const on = !t.inProgress
+  const rows: FieldOpIpc[] = [{ id, f: 'inProgress', val: on }]
+  if (on) rows.push(...pinOrder(s, id, t.important))
   await s.setMany(rows)
 })
 
@@ -443,11 +473,12 @@ handle('task:menu', (id: string) => {
         // 非删除那一支只有这几项：备注在详情栏写、完成在列表的圆圈上点，
         // 同一个动作不留第二个入口 —— 右键菜单只放任务自己的属性和删除
         // 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），和"进行中"那种
-        // 临时状态不是一回事，所以放在最前面
+        // 临时状态不是一回事，所以放在最前面。两个都会把那条任务排到它该在的位置上
+        // （重要最前、进行中紧跟其后，见 pinOrder）
         { label: t.important ? L.menuUnimportant : L.menuImportant,
           click: () => void toggleImportant(id) },
         { label: t.inProgress ? L.unmarkInProgress : L.menuInProgress,
-          click: () => void write(s => s.setField(id, 'inProgress', !t.inProgress)) },
+          click: () => void toggleInProgress(id) },
         { type: 'separator' },
         { label: L.menuDelete, click: () => void write(s => s.trash(id)) },
       ]
@@ -615,7 +646,7 @@ handle('task:complete', (id: string) => write(async s => {
    * order 早不是这个值了 —— 手排的位置不能动。
    */
   if (next.important && next.order === orderKey(next.createdAt)) {
-    const rows = importantOrder(s, next.id)
+    const rows = pinOrder(s, next.id, true)
     if (rows.length) await s.setMany(rows)
   }
   return next.id

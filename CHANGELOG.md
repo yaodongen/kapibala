@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.4 — 2026-10-17
+
+- Marking a task **Doing** now also moves it to the top of its day: below any important tasks, or — if the task was already important — to the very front, ahead of them. The position is written into the data the same way marking Important already worked, so you can still drag it back down afterwards.
+- 标记 **Doing** 的任务现在也会排到它所在那一天的最前面：在重要任务后面；本来就标了重要的那条则顶到重要任务的最前面 —— 一条已经在做的重要任务就是当下最该露头的那条。位置照样写进数据，标完想拖回去还是拖得动。
+
 ## 1.12.3 — 2026-10-17
 
 - The calendar now knows when the day has turned: after midnight, or when the window comes back into focus after a sleep, every view re-renders on the new day instead of still showing yesterday's "today", and the continuous calendar keeps the days it has already laid out and its scroll position — only the today marker moves. Its grid is now anchored to 2026-01-01, so a date always lands in the same column no matter when you open it. The 14d view is gone (the continuous calendar covers it); an `ui.json` that still says `calendar14` opens the continuous calendar instead.
