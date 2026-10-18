@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.6 — 2026-10-18
+
+- Repeat can now be said in the title: type `每天看书` or `每周末都需要跑步` in the add bar and the repeat rule (plus the first date) is filled in for you — daily, every N days, weekly on a day, weekdays, weekends, monthly on a date / the nth weekday / the last day, yearly, in Chinese or English. The title is left exactly as typed, and a repeat you picked by hand is never overwritten. The repeat menu also gained **Weekends (Sat–Sun)**.
+- 重复可以直接写在标题里了：在添加栏敲「每天看书」「每周末跑步」，重复下拉会自动选上、第一次的日期也排好 —— 每天 / 每 N 天 / 每周某天 / 工作日 / 周末 / 每月某日 / 每月第几个周几 / 每月最后一天 / 每年，中英文都认。标题原样保留，手动选过的重复不会被覆盖；重复选项里同时补上了「周末（周六和周日）」。
+
 ## 1.12.5 — 2026-10-18
 
 - In the continuous calendar, **today**'s date is now a filled accent-coloured pill: a solid block instead of the accent-coloured text that weekends use, so the two no longer look alike — including when today itself falls on a weekend.

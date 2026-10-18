@@ -5,10 +5,10 @@
 import type { Task } from '@kapibala/core'
 // 只从子路径引这个纯函数：渲染进程是 browser 目标，不能碰 core 里用到 node:crypto 的部分
 import { notePreview, renderMarkdown } from '@kapibala/core/markdown'
-import { describeRepeat, describeRrule, occurrencesBetween, parseRrule, presetsFor,
+import { describeRepeat, describeRrule, nextAfter, occurrencesBetween, parseRrule, presetsFor,
          toRruleString } from '@kapibala/core/rrule'
-// 纯函数，和 markdown / rrule 一样只从子路径引：从标题里认日期和时间，给添加栏预填
-import { parseWhenIn } from '@kapibala/core/when'
+// 纯函数，和 markdown / rrule 一样只从子路径引：从标题里认日期、时间和重复，给添加栏预填
+import { parseRepeatIn, parseWhenIn } from '@kapibala/core/when'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
@@ -2020,10 +2020,16 @@ document.addEventListener('focusout', (e) => {
   if (el) void saveNote(el)
 })
 
-/** 添加栏的重复下拉：选项跟着所选日期走，没选就按今天 */
-function syncNewRepeat() {
+/**
+ * 添加栏的重复下拉：选项跟着所选日期走，没选就按今天。
+ *
+ * keep 传了就用它当"要选中的值"（标题里认出来的重复走这条），不传就用当前选中的。
+ * 这么传是因为刚认出来的规则可能还不在选项里（"每 2 天""每月最后一天"），
+ * 直接写 `ri.value` 会因为找不到对应 option 被浏览器清成空 —— 下面那份 extra 就是干这个的。
+ */
+function syncNewRepeat(keepOverride?: string | null) {
   const at = di.value ? +new Date(`${di.value}T00:00`) : today()
-  const keep = ri.value
+  const keep = keepOverride === undefined ? ri.value : keepOverride
   const presets = presetsFor(at, lang)
   // 自己填的天数不在预设里，换日期重建选项时要原样带回来，否则会被悄悄清成"不重复"
   const extra = keep && keep !== CUSTOM && !presets.some(o => o.rrule === keep)
@@ -2109,13 +2115,15 @@ const ni = $('newTime') as HTMLInputElement
 const ri = $('newRepeat') as HTMLSelectElement
 
 /**
- * 添加栏的日期/时间是不是"从标题里认出来、自动填的"。
- * 用户自己动过哪个框，就不再覆盖哪个 —— 边打字边把他刚选的日期冲掉最招人烦。
+ * 添加栏的日期 / 时间 / 重复是不是"从标题里认出来、自动填的"。
+ * 用户自己动过哪个控件，就不再覆盖哪个 —— 边打字边把他刚选的日期冲掉最招人烦。
  */
 let dateAuto = false
 let timeAuto = false
+let repeatAuto = false
 let dateManual = false
 let timeManual = false
+let repeatManual = false
 
 /** 当天第几分钟 → <input type=time> 认的 HH:mm。那个控件只认 24 小时制（见 hhmm24） */
 const timeValue = (minutes: number): string =>
@@ -2128,15 +2136,44 @@ function dateValue(ts: number): string {
 }
 
 /**
- * 边打字边认标题里的日期和时间，认到就预填，**标题原文一个字不动**。
+ * 规则自己知道"第一次该落在哪天"的时候用它：`每个工作日` 排到最近的工作日、
+ * `每月最后一天` 排到月末、`每周末` 今天就是周末就算今天。找不到返回 null，
+ * 调用方退回标题里写的日期。
+ *
+ * 只在标题里**没另写日期**、或者那个日期说法本身就长在重复说法里面的时候用 ——
+ * "明天每周五开会"里的"明天"是用户明确写的，不能被规则改成周五。
+ */
+function firstDayOf(rrule: string): number | null {
+  const rule = parseRrule(rrule)
+  if (!rule) return null
+  const from = today()
+  // 从 from - 1 起找，正好落在今天的才算"今天"（nextAfter 要的是严格大于）。
+  // 不用 occurrencesBetween：它把 cursor 夹在 max(anchor, from - 1)，anchor 就是今天时
+  // 会把今天这一期跳过去 —— 日历推演用不着"起点当天"这层语义，这里要
+  return nextAfter(rule, from, from - 1)
+}
+
+/**
+ * 边打字边认标题里的日期、时间和重复，认到就预填，**标题原文一个字不动**。
  * 用户改过的框不覆盖；认不出来了就把**自动填的**擦掉 —— 删掉"明天"之后
  * 框里还留着明天，回车就存错了。
  */
 function syncWhenFromTitle() {
   const hit = parseWhenIn(ti.value)
+  // 用户自己挑过重复就不再改它，连"这句话里有重复说法"都不当回事
+  const rep = repeatManual ? null : parseRepeatIn(ti.value)
   let changed = false
-  if (hit?.day !== undefined && !dateManual) {
-    const v = dateValue(hit.day)
+
+  // 日期。标题里另写的日期说法最优先；长在重复说法里面的（"每周五"的"周五"、
+  // "每月第二个周二"的"周二"）听规则的 —— 那是规则的一部分，不该按"最近的周几"算
+  const inRule = !!(rep?.spans[0] && hit?.dateSpan &&
+    hit.dateSpan.start >= rep.spans[0].start && hit.dateSpan.end <= rep.spans[0].end)
+  let autoDay: number | null = null
+  if (hit?.day !== undefined) autoDay = inRule ? firstDayOf(rep!.rrule) ?? hit.day : hit.day
+  else if (rep) autoDay = firstDayOf(rep.rrule)
+
+  if (autoDay !== null && !dateManual) {
+    const v = dateValue(autoDay)
     if (di.value !== v) { di.value = v; changed = true }
     dateAuto = true
   } else if (dateAuto && !dateManual) {
@@ -2149,8 +2186,13 @@ function syncWhenFromTitle() {
   } else if (timeAuto && !timeManual) {
     ni.value = ''; timeAuto = false; changed = true
   }
+
+  // 重复：认到就选上（不在预设里的规则 syncNewRepeat 会补一条），认不到了就撤掉
+  let keep: string | null | undefined
+  if (rep) { keep = rep.rrule; repeatAuto = true }
+  else if (repeatAuto) { keep = ''; repeatAuto = false }
   // 日期变了，重复预设（"每月第二个周二"那种）得跟着重算
-  if (changed) syncNewRepeat()
+  if (changed || keep !== undefined) syncNewRepeat(keep)
 }
 
 /** 建完一条，添加栏整个复位（预填标记也要清，下一条从头认） */
@@ -2161,8 +2203,10 @@ function resetAddBar() {
   ri.value = ''
   dateAuto = false
   timeAuto = false
+  repeatAuto = false
   dateManual = false
   timeManual = false
+  repeatManual = false
   syncNewRepeat()
 }
 
@@ -2323,6 +2367,9 @@ document.addEventListener('change', (e) => {
     void kapi['task:setField'](selected, 'repeat', v ? { rrule: v } : null)
   }
   if (el.id === 'newRepeat') {
+    // 用户自己挑过重复：标题里再写"每天"也不改它（和日期框一个规矩）
+    repeatManual = true
+    repeatAuto = false
     const v = ri.value
     if (v === CUSTOM) { customFor = 'new'; renderNewCustom(null); focusCustom('newcustom'); return }
     customFor = null

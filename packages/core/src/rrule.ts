@@ -1,5 +1,5 @@
 /**
- * RFC 5545 RRULE 的一个子集：够表达"每月第二个周二""每年""仅工作日"这类规则。
+ * RFC 5545 RRULE 的一个子集：够表达"每月第二个周二""每年""仅工作日""仅周末"这类规则。
  *
  * 明确支持：FREQ（DAILY/WEEKLY/MONTHLY/YEARLY）、INTERVAL、BYDAY（可带序号，
  * 如 2TU 第二个周二、-1FR 最后一个周五）、BYMONTHDAY（含 -1 表示月末）、
@@ -224,6 +224,9 @@ function ord(n: number): string {
 const WORKDAYS: Weekday[] = ['MO', 'TU', 'WE', 'TH', 'FR']
 const isWorkweek = (days: Weekday[]) =>
   days.length === 5 && WORKDAYS.every(d => days.includes(d))
+/** 周末：只看"是不是只有周六、周日"，跟写的顺序无关（SA,SU / SU,SA 都算） */
+const isWeekend = (days: Weekday[]) =>
+  days.length === 2 && days.includes('SA') && days.includes('SU')
 
 /** 英文描述，比如 "Monthly on the 2nd Tuesday" */
 function describeEn(r: Rrule): string {
@@ -233,6 +236,7 @@ function describeEn(r: Rrule): string {
   if (r.freq === 'DAILY') return n > 1 ? `Every ${n} days` : 'Daily'
   if (r.freq === 'WEEKLY') {
     if (isWorkweek(days)) return 'Weekdays'
+    if (isWeekend(days)) return 'Weekends'
     const list = days.map(d => EN_DAY[d]).join(', ')
     if (!days.length) return n > 1 ? `Every ${n} weeks` : 'Weekly'
     return n > 1 ? `Every ${n} weeks on ${list}` : `Every ${list}`
@@ -262,6 +266,7 @@ export function describeRrule(src: string | Rrule, lang: Lang = 'zh'): string {
   if (r.freq === 'DAILY') return r.interval > 1 ? `每 ${r.interval} 天` : '每天'
   if (r.freq === 'WEEKLY') {
     if (isWorkweek(days)) return '工作日'
+    if (isWeekend(days)) return '周末'
     if (!days.length) return r.interval > 1 ? `每 ${r.interval} 周` : '每周'
     return `${every}${r.interval > 1 ? '周 ' : '周'}${days.map(d => CN_DAY[d]).join('、')}`
       .replace('每周周', '每周')
@@ -302,16 +307,17 @@ export function presetsFor(at: number, lang: Lang = 'zh'): { label: string; rrul
   const { nth, fromEnd } = nthOfMonth(d)
   const nthOrd = fromEnd === -1 ? -1 : nth
   const labels = lang === 'en'
-    ? ['Daily', `Weekly on ${EN_DAY[wd]}`, 'Weekdays (Mon–Fri)', `Monthly on the ${ord(day)}`,
-       `Monthly on the ${ord(nthOrd)} ${EN_DAY[wd]}`, 'Monthly on the last day',
-       `Yearly on ${EN_MONTH[month - 1]} ${day}`]
-    : ['每天', `每周${CN_DAY[wd]}`, '工作日（周一至周五）', `每月 ${day} 日`,
+    ? ['Daily', `Weekly on ${EN_DAY[wd]}`, 'Weekdays (Mon–Fri)', 'Weekends (Sat–Sun)',
+       `Monthly on the ${ord(day)}`, `Monthly on the ${ord(nthOrd)} ${EN_DAY[wd]}`,
+       'Monthly on the last day', `Yearly on ${EN_MONTH[month - 1]} ${day}`]
+    : ['每天', `每周${CN_DAY[wd]}`, '工作日（周一至周五）', '周末（周六和周日）', `每月 ${day} 日`,
        `每月${nthOrd === -1 ? '最后一个' : CN_ORD[nthOrd]}${CN_DAY[wd]}`, '每月最后一天',
        `每年 ${month} 月 ${day} 日`]
   const rrules = [
     'FREQ=DAILY',
     `FREQ=WEEKLY;BYDAY=${wd}`,
     'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    'FREQ=WEEKLY;BYDAY=SA,SU',
     `FREQ=MONTHLY;BYMONTHDAY=${day}`,
     `FREQ=MONTHLY;BYDAY=${nthOrd}${wd}`,
     // "每月 31 日"在没有 31 号的月份会跳过（RFC 就是这么定的），

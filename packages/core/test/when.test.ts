@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WHEN_PATTERNS, cnNumber, parseWhenIn, whenToStart, type WhenHit } from '../src/when.ts'
+import { REPEAT_PATTERNS, WHEN_PATTERNS, cnNumber, parseRepeatIn, parseWhenIn, whenToStart,
+         type WhenHit } from '../src/when.ts'
 
 /**
  * 把"现在"钉死在 2026-08-26（周三）10:30。
@@ -342,10 +343,102 @@ describe('中文数字', () => {
   })
 })
 
+describe('重复说法', () => {
+  const rule = (text: string) => parseRepeatIn(text)?.rrule ?? null
+
+  it('每天 / 每 N 天', () => {
+    expect(rule('每天看书')).toBe('FREQ=DAILY')
+    expect(rule('每日看书')).toBe('FREQ=DAILY')
+    expect(rule('每天都要喝水')).toBe('FREQ=DAILY')
+    expect(rule('天天跑步')).toBe('FREQ=DAILY')
+    expect(rule('每一天都要喝水')).toBe('FREQ=DAILY')
+    expect(rule('每 2 天浇花')).toBe('FREQ=DAILY;INTERVAL=2')
+    expect(rule('每两天浇花')).toBe('FREQ=DAILY;INTERVAL=2')
+    expect(rule('每三天浇花')).toBe('FREQ=DAILY;INTERVAL=3')
+    expect(rule('每２天浇花')).toBe('FREQ=DAILY;INTERVAL=2')   // 全角数字
+  })
+
+  it('每周某天 / 周末 / 工作日', () => {
+    expect(rule('每周一 9:00 站会')).toBe('FREQ=WEEKLY;BYDAY=MO')
+    expect(rule('每星期三开会')).toBe('FREQ=WEEKLY;BYDAY=WE')
+    expect(rule('每礼拜天休息')).toBe('FREQ=WEEKLY;BYDAY=SU')
+    expect(rule('每周末都需要跑步')).toBe('FREQ=WEEKLY;BYDAY=SA,SU')
+    expect(rule('每个周末跑步')).toBe('FREQ=WEEKLY;BYDAY=SA,SU')
+    expect(rule('每个工作日吃药')).toBe('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
+    expect(rule('每工作日吃药')).toBe('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
+    expect(rule('每周一次复盘')).toBe('FREQ=WEEKLY')          // "每周一"后面跟"次"不是周一
+    expect(rule('每周两次健身')).toBeNull()                    // 一周两次表示不了，不猜
+    expect(rule('每周八开会')).toBeNull()
+  })
+
+  it('每月：某日 / 最后一天 / 第几个周几', () => {
+    expect(rule('每月19日交房租')).toBe('FREQ=MONTHLY;BYMONTHDAY=19')
+    expect(rule('每个月 19 号交房租')).toBe('FREQ=MONTHLY;BYMONTHDAY=19')
+    expect(rule('每月的19号交房租')).toBe('FREQ=MONTHLY;BYMONTHDAY=19')
+    expect(rule('每月最后一天复盘')).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
+    expect(rule('每个月的最后一天复盘')).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
+    expect(rule('每月第二个周二开例会')).toBe('FREQ=MONTHLY;BYDAY=2TU')
+    expect(rule('每月最后一个周五聚餐')).toBe('FREQ=MONTHLY;BYDAY=-1FR')
+    expect(rule('每月交房租')).toBe('FREQ=MONTHLY')
+    // 数值不合法时整句落空，不能退化成"每月一次"
+    expect(rule('每月32号交房租')).toBeNull()
+    expect(rule('每月第六个周二开会')).toBeNull()
+    expect(rule('每月最后一个工作日复盘')).toBeNull()       // 表示不了，不猜
+  })
+
+  it('每年：某月某日 / 每年', () => {
+    expect(rule('每年10月19日纪念')).toBe('FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=19')
+    expect(rule('每年的 2 月 29 日检查')).toBe('FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29')
+    expect(rule('每年纪念')).toBe('FREQ=YEARLY')
+    expect(rule('每年一次体检')).toBe('FREQ=YEARLY')
+    expect(rule('每年的 2 月 30 日检查')).toBeNull()          // 那天不存在
+    expect(rule('每年级开会')).toBeNull()                      // 每个年级，不是一年一次
+  })
+
+  it('英文', () => {
+    expect(rule('every day run')).toBe('FREQ=DAILY')
+    expect(rule('Daily standup')).toBe('FREQ=DAILY')
+    expect(rule('every weekend run')).toBe('FREQ=WEEKLY;BYDAY=SA,SU')
+    expect(rule('every Monday standup')).toBe('FREQ=WEEKLY;BYDAY=MO')
+    expect(rule('every fri retro')).toBe('FREQ=WEEKLY;BYDAY=FR')
+    expect(rule('every 2 days water')).toBe('FREQ=DAILY;INTERVAL=2')
+    expect(rule('monthly report')).toBe('FREQ=MONTHLY')
+    expect(rule('weekly sync')).toBe('FREQ=WEEKLY')
+    expect(rule('yearly review')).toBe('FREQ=YEARLY')
+    expect(rule('every 1000 days')).toBeNull()
+  })
+
+  it('没有重复说法就不碰：普通标题、只有日期、认不出来的星期', () => {
+    for (const s of ['买菜', '明天买菜', '下周三开会', '周五开会', '3天后交报告', ''])
+      expect(rule(s), s).toBeNull()
+  })
+
+  it('命中原文和位置按原样给（全角数字、大写都还回去）', () => {
+    const a = parseRepeatIn('早上每天跑步')!
+    expect(a.text).toBe('每天')
+    expect(a.spans).toEqual([{ start: 2, end: 4 }])
+    const b = parseRepeatIn('EVERY 2 DAYS watering')!
+    expect(b.text).toBe('EVERY 2 DAYS')
+    expect(b.spans).toEqual([{ start: 0, end: 12 }])
+  })
+
+  it('dateSpan 标出日子那一段，界面据此判断它是不是长在重复说法里', () => {
+    const hit = parse('每周五 9:00 开会')!
+    expect(hit.dateSpan).toBeDefined()
+    const rep = parseRepeatIn('每周五 9:00 开会')!
+    expect(hit.dateSpan!.start).toBeGreaterThanOrEqual(rep.spans[0]!.start)
+    expect(hit.dateSpan!.end).toBeLessThanOrEqual(rep.spans[0]!.end)
+    // 另写的日期不在重复说法里面
+    const other = parse('明天每天跑步')!
+    expect(other.dateSpan!.start).toBeLessThan(parseRepeatIn('明天每天跑步')!.spans[0]!.start)
+  })
+})
+
 describe('具名正则清单', () => {
   it('覆盖中英文的日期和时间，名字不重复', () => {
     const names = WHEN_PATTERNS.map(p => p.name)
-    expect(new Set(names).size).toBe(names.length)
+    const all = [...WHEN_PATTERNS, ...REPEAT_PATTERNS].map(p => p.name)
+    expect(new Set(all).size).toBe(all.length)          // 两份清单之间也不能重名
     expect(names).toContain('cn.relative-day')
     expect(names).toContain('cn.weekday')
     expect(names).toContain('cn.period-clock')
@@ -353,7 +446,8 @@ describe('具名正则清单', () => {
     expect(names).toContain('en.weekday')
     expect(names).toContain('en.ampm')
     expect(WHEN_PATTERNS.length).toBeGreaterThanOrEqual(20)
-    for (const p of WHEN_PATTERNS) {
+    expect(REPEAT_PATTERNS.length).toBeGreaterThanOrEqual(15)
+    for (const p of [...WHEN_PATTERNS, ...REPEAT_PATTERNS]) {
       expect(p.note.length, p.name).toBeGreaterThan(0)
       expect(p.re.global, p.name).toBe(false)      // 共享的正则不能带 g，会串 lastIndex
     }

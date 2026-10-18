@@ -68,6 +68,11 @@ describe('下一次是哪天', () => {
       .toEqual(['Mon Aug 31 2026', 'Tue Sep 01 2026', 'Wed Sep 02 2026', 'Thu Sep 03 2026'])
   })
 
+  it('仅周末：周五的下一次是周六，周日之后又回到周六', () => {
+    expect(series('FREQ=WEEKLY;BYDAY=SA,SU', '2026-08-28T09:00', 4))
+      .toEqual(['Sat Aug 29 2026', 'Sun Aug 30 2026', 'Sat Sep 05 2026', 'Sun Sep 06 2026'])
+  })
+
   it('每年', () => {
     expect(series('FREQ=YEARLY', '2026-08-26T09:00', 2))
       .toEqual(['Thu Aug 26 2027', 'Sat Aug 26 2028'])
@@ -186,6 +191,8 @@ describe('中文描述', () => {
     ['FREQ=DAILY', '每天'],
     ['FREQ=DAILY;INTERVAL=3', '每 3 天'],
     ['FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', '工作日'],
+    ['FREQ=WEEKLY;BYDAY=SA,SU', '周末'],
+    ['FREQ=WEEKLY;BYDAY=SU,SA', '周末'],       // 顺序反过来也是周末
     ['FREQ=WEEKLY;BYDAY=TU', '每周二'],
     ['FREQ=MONTHLY;BYDAY=2TU', '每月第二个周二'],
     ['FREQ=MONTHLY;BYDAY=-1FR', '每月最后一个周五'],
@@ -202,6 +209,7 @@ describe('英文描述', () => {
     ['FREQ=DAILY', 'Daily'],
     ['FREQ=DAILY;INTERVAL=3', 'Every 3 days'],
     ['FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', 'Weekdays'],
+    ['FREQ=WEEKLY;BYDAY=SA,SU', 'Weekends'],
     ['FREQ=WEEKLY;BYDAY=TU', 'Every Tuesday'],
     ['FREQ=WEEKLY;INTERVAL=2;BYDAY=MO', 'Every 2 weeks on Monday'],
     ['FREQ=MONTHLY;BYDAY=2TU', 'Monthly on the 2nd Tuesday'],
@@ -232,15 +240,16 @@ describe('英文描述', () => {
 })
 
 describe('界面预设', () => {
-  it('从一个具体日期推出六个预设', () => {
+  it('从一个具体日期推出预设，工作日和周末各一条', () => {
     // 2026-08-11 是八月第二个周二
     const opts = presetsFor(at('2026-08-11T09:00'))
     expect(opts.map(o => o.label)).toEqual([
-      '每天', '每周周二', '工作日（周一至周五）', '每月 11 日', '每月第二个周二',
-      '每月最后一天', '每年 8 月 11 日',
+      '每天', '每周周二', '工作日（周一至周五）', '周末（周六和周日）', '每月 11 日',
+      '每月第二个周二', '每月最后一天', '每年 8 月 11 日',
     ])
-    expect(opts[4]!.rrule).toBe('FREQ=MONTHLY;BYDAY=2TU')
-    expect(opts[5]!.rrule).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
+    expect(opts[3]!.rrule).toBe('FREQ=WEEKLY;BYDAY=SA,SU')
+    expect(opts[5]!.rrule).toBe('FREQ=MONTHLY;BYDAY=2TU')
+    expect(opts[6]!.rrule).toBe('FREQ=MONTHLY;BYMONTHDAY=-1')
   })
 
   it('英文预设：规则一模一样，只有 label 换语言', () => {
@@ -249,9 +258,16 @@ describe('界面预设', () => {
     const en = presetsFor(at, 'en')
     expect(en.map(o => o.rrule)).toEqual(zh.map(o => o.rrule))
     expect(en.map(o => o.label)).toEqual([
-      'Daily', 'Weekly on Tuesday', 'Weekdays (Mon–Fri)', 'Monthly on the 11th',
-      'Monthly on the 2nd Tuesday', 'Monthly on the last day', 'Yearly on August 11',
+      'Daily', 'Weekly on Tuesday', 'Weekdays (Mon–Fri)', 'Weekends (Sat–Sun)',
+      'Monthly on the 11th', 'Monthly on the 2nd Tuesday', 'Monthly on the last day',
+      'Yearly on August 11',
     ])
+  })
+
+  it('选了"周末"之后派出来的每期真的落在周六、周日上', () => {
+    // 周三起：第一个下一期是周六，然后周日，再下一个周六
+    expect(series('FREQ=WEEKLY;BYDAY=SA,SU', '2026-08-12T09:00', 4))
+      .toEqual(['Sat Aug 15 2026', 'Sun Aug 16 2026', 'Sat Aug 22 2026', 'Sun Aug 23 2026'])
   })
 })
 

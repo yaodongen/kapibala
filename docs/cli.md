@@ -88,7 +88,7 @@ A few conventions:
 Worth knowing:
 
 - Month and day need **two digits**: `2026-08-28` works, `2026-8-28` reports "看不懂的时间".
-- These are the only forms. The natural-language parsing the GUI has (`下周三`, `3天后`, `每周五`) is not wired into `--at`; anything else is an error — say it in the GUI instead.
+- These are the only forms. The natural-language parsing the GUI has (`下周三`, `3天后`, `每周五`, `每周末`) is not wired into `--at`; anything else is an error — say it in the GUI instead.
 - The weekday rule matches the GUI exactly (core's `when.ts`): **the nearest occurrence**, and if today is that weekday then next week's. So on a Wednesday, `fri` means **this** Friday.
 - Times are local time.
 
@@ -103,7 +103,7 @@ Three words — `daily`, `weekly`, `monthly` — plus `--after` to switch modes:
 
 The next occurrence's id is derived from *this* occurrence (series + previous id), so two Macs each completing the same one compute the same id and merge into a single task instead of two. Once `UNTIL` is reached, or the series ends, `done` stops spawning ([`packages/core/src/repeat.ts`](../packages/core/src/repeat.ts) documents the derivation in full).
 
-The CLI only exposes those three presets. Intervals greater than 1 ("every two weeks"), weekdays-only, nth-weekday-of-month and the rest of core's rrule support have to be set in the GUI — the CLI reads them fine afterwards.
+The CLI only exposes those three presets. Intervals greater than 1 ("every two weeks"), weekdays-only, weekends-only, nth-weekday-of-month and the rest of core's rrule support have to be set in the GUI — the CLI reads them fine afterwards.
 
 ## 6. Running alongside the desktop app
 

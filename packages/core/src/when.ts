@@ -1,9 +1,9 @@
 /**
- * 从自由文本里认日期和时间 —— 中英文都认。
+ * 从自由文本里认日期、时间和重复说法 —— 中英文都认。
  *
  * 定位：**只认，不改**。给它一段文本和一个"现在"，它告诉你命中了哪一天、
- * 哪个时刻，以及命中片段的原文位置；标题原文一个字都不动（添加栏的规矩）。
- * 认不出来就返回 null，绝不拿近似值糊弄 —— 认错的日子比没认出来更烦人。
+ * 哪个时刻、哪条重复规则，以及命中片段的原文位置；标题原文一个字都不动
+ *（添加栏的规矩）。认不出来就返回 null，绝不拿近似值糊弄 —— 认错的日子比没认出来更烦人。
  *
  * 这里不碰存储、不碰时区配置：一律用运行环境的本地时区，和 rrule.ts 一个口径。
  * 所有"相对说法"（明天、下周三、in 3 days）都以传进来的 `now` 为基准算，
@@ -29,6 +29,11 @@ export type WhenHit = {
   text: string
   /** 命中片段在原文里的位置，按出现顺序。用于日志、以后想做高亮 */
   spans: Array<{ start: number; end: number }>
+  /**
+   * 其中"日子"那一段的位置（时间不算）。界面拿它判断这段日子是不是就长在
+   * 一句重复说法里 —— "每周五"里的"周五"该听规则的，而不是当成"最近的周五"
+   */
+  dateSpan?: { start: number; end: number }
 }
 
 export type WhenPattern = { name: string; re: RegExp; note: string }
@@ -796,6 +801,7 @@ export function parseWhenIn(text: string, now: number = Date.now()): WhenHit | n
   }
   if (day !== undefined) hit.day = day
   if (minutes !== undefined) hit.minutes = minutes
+  if (dateHit) hit.dateSpan = { start: dateHit.start, end: dateHit.end }
   return hit
 }
 
@@ -808,4 +814,250 @@ export function whenToStart(hit: WhenHit, now: number = Date.now()): { startAt: 
   const day = hit.day ?? startOfDay(now)
   if (hit.minutes === undefined) return { startAt: day, isAllDay: true }
   return { startAt: atMinutes(day, hit.minutes), isAllDay: false }
+}
+
+/* ── 重复说法 ──────────────────────────────────────────────────────────────
+ * 标题里写了"每天""每周末""每月 19 日"这类话，重复下拉就跟着选上。
+ *
+ * 和日期一样**只认，不改标题**；也只认**下拉里表示得了的规则**（外加"每 N 天"
+ * 那个自定义天数）—— 认出一条界面上选不了的规则，用户想改都改不回去。
+ * 顺序不重要：同一位置能匹配上多条时取更长的（"每月最后一天"不会被"每月"截走）。
+ */
+
+/** 一次重复说法的命中 */
+export type RepeatHit = {
+  /** 直接写进 Task.repeat.rrule 的规则 */
+  rrule: string
+  /** 命中的原文（归一化以前的样子） */
+  text: string
+  /** 命中片段的原文位置。目前只有一段，留成数组是为了和 WhenHit 一个形状 */
+  spans: Array<{ start: number; end: number }>
+}
+
+type RepeatMatcher = {
+  name: string
+  re: RegExp
+  note: string
+  /** 生成规则。返回 null = 语法认出来了但数值非法（"每月 32 日"）：整句不算数，也不再退回更短的规则 */
+  rrule: (m: RegExpExecArray) => string | null
+}
+
+const CN_NTH: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5 }
+/** 数字星期（0=周日，见上面的 CN_WEEKDAY）→ RRULE 的 BYDAY 代码 */
+const BYDAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+const cnByday = (ch: string) => BYDAY_CODES[CN_WEEKDAY[ch]!]!
+const enByday = (word: string) => BYDAY_CODES[EN_WEEKDAY[word.slice(0, 3)]!]!
+
+function everyDays(n: number): string | null {
+  if (!Number.isInteger(n) || n < 1 || n > 999) return null
+  return n === 1 ? 'FREQ=DAILY' : `FREQ=DAILY;INTERVAL=${n}`
+}
+
+function everyMonthDay(n: number): string | null {
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? `FREQ=MONTHLY;BYMONTHDAY=${n}` : null
+}
+
+/** "每年 2 月 29 日"得先确认那天真的存在 —— 拿闰年 2000 年试一天 */
+function everyYearOn(month: number, day: number): string | null {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null
+  const probe = new Date(2000, month - 1, day)
+  if (probe.getMonth() !== month - 1 || probe.getDate() !== day) return null
+  return `FREQ=YEARLY;BYMONTH=${month};BYMONTHDAY=${day}`
+}
+
+const REPEAT_MATCHERS: RepeatMatcher[] = [
+  {
+    name: 'cn.every-weekend',
+    re: /每\s*个?\s*(?:周|星期|礼拜)\s*末/,
+    note: '每周末 / 每个周末 → 周六、周日',
+    rrule: () => 'FREQ=WEEKLY;BYDAY=SA,SU',
+  },
+  {
+    name: 'cn.every-workday',
+    re: /每\s*个?\s*工作日/,
+    note: '每个工作日 / 每工作日 → 周一至周五',
+    rrule: () => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+  },
+  {
+    name: 'cn.every-weekday',
+    re: /每\s*个?\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/,
+    note: '每周三 / 每星期五 / 每礼拜天 → 每周那一天',
+    rrule: (m) => `FREQ=WEEKLY;BYDAY=${cnByday(m[1]!)}`,
+  },
+  {
+    name: 'cn.every-week-times',
+    re: /每\s*个?\s*(?:周|星期|礼拜)\s*(\d{1,2}|[一二两三四五六七八九十]{1,2})\s*次/,
+    note: '每周一次 → 每周（"每周两次"下拉里表示不了，认出来也不设）',
+    rrule: (m) => {
+      const n = Number(m[1]) || cnNumber(m[1]!)
+      return n === 1 ? 'FREQ=WEEKLY' : null
+    },
+  },
+  {
+    name: 'cn.every-n-days',
+    re: /每\s*(\d{1,3}|[一二两三四五六七八九十]{1,3})\s*天/,
+    note: '每 2 天 / 每两天 / 每三天 → 每隔 N 天',
+    rrule: (m) => everyDays(Number(m[1]) || cnNumber(m[1]!) || 0),
+  },
+  {
+    name: 'cn.every-day',
+    re: /每天|每日|每一天|天天/,
+    note: '每天 / 每日 / 天天 / 每一天',
+    rrule: () => 'FREQ=DAILY',
+  },
+  {
+    name: 'cn.every-month-last-day',
+    re: /每\s*个?\s*月\s*的?\s*最后\s*(?:一\s*)?天/,
+    note: '每月最后一天 / 每个月的最后一天 → 每月月末',
+    rrule: () => 'FREQ=MONTHLY;BYMONTHDAY=-1',
+  },
+  {
+    name: 'cn.every-month-nth-weekday',
+    // 序数位收得宽一点（"第六个"也先认出来）：数值不合法时让整句落空，
+    // 而不是退回下面那条"每月"，把"每月第六个周二"变成"每月一次"
+    re: /每\s*个?\s*月\s*的?\s*第\s*(\d{1,2}|[一二三四五六七八九十]{1,2})\s*个?\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/,
+    note: '每月第二个周二 → 那个月的第 N 个周 X（只支持第 1–5 个）',
+    rrule: (m) => {
+      const n = Number(m[1]) || CN_NTH[m[1]!] || cnNumber(m[1]!) || 0
+      if (!(n >= 1 && n <= 5)) return null
+      return `FREQ=MONTHLY;BYDAY=${n}${cnByday(m[2]!)}`
+    },
+  },
+  {
+    name: 'cn.every-month-last-weekday',
+    re: /每\s*个?\s*月\s*的?\s*最后\s*一?\s*个?\s*(?:周|星期|礼拜)\s*([一二三四五六日天])/,
+    note: '每月最后一个周五 → 那个月最后一个周 X',
+    rrule: (m) => `FREQ=MONTHLY;BYDAY=-1${cnByday(m[1]!)}`,
+  },
+  {
+    name: 'cn.every-month-day',
+    re: /每\s*个?\s*月\s*的?\s*(\d{1,2})\s*[日号]/,
+    note: '每月 19 日 / 每个月的 19 号 → 每月那一天',
+    rrule: (m) => everyMonthDay(Number(m[1])),
+  },
+  {
+    name: 'cn.every-month',
+    // 后面跟着具体日子（"32 日"）、序数（"第六个"）或"最后…"时别再退化成"每月一次"：
+    // 那些是上面几条的事，认不出合法值就整句落空
+    re: /每\s*个?\s*月(?!\s*的?\s*(?:\d|第|最后))/,
+    note: '每月 / 每个月 → 按当前日期每月一次',
+    rrule: () => 'FREQ=MONTHLY',
+  },
+  {
+    name: 'cn.every-year-on',
+    re: /每\s*年\s*的?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]/,
+    note: '每年 10 月 19 日 → 每年那一天',
+    rrule: (m) => everyYearOn(Number(m[1]), Number(m[2])),
+  },
+  {
+    name: 'cn.every-year',
+    re: /每\s*年(?!\s*级)/,       // "每年级"是每个年级，不是一年一次
+    note: '每年 / 每年度 → 每年一次',
+    rrule: () => 'FREQ=YEARLY',
+  },
+  {
+    name: 'cn.every-week',
+    // 后面跟着"八九十"这种不存在的星期几时别退化成"每周一次"；
+    // "每周一/三/五"和"每周末"自有更长的规则接着，不靠这条兜底
+    re: /每\s*个?\s*(?:周|星期|礼拜)(?!\s*[八九十末])/,
+    note: '每周 / 每星期 / 每礼拜 → 每周一次（按当前日期那天）',
+    rrule: () => 'FREQ=WEEKLY',
+  },
+  {
+    name: 'en.every-weekend',
+    re: /\bevery\s+weekends?\b/,
+    note: 'every weekend → 周六、周日',
+    rrule: () => 'FREQ=WEEKLY;BYDAY=SA,SU',
+  },
+  {
+    name: 'en.every-weekday',
+    re: /\bevery\s+weekdays?\b/,
+    note: 'every weekday → 周一至周五',
+    rrule: () => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+  },
+  {
+    name: 'en.every-named-day',
+    re: /\bevery\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b/,
+    note: 'every Monday / every fri → 每周那一天',
+    rrule: (m) => `FREQ=WEEKLY;BYDAY=${enByday(m[1]!)}`,
+  },
+  {
+    name: 'en.every-n-days',
+    re: /\bevery\s+(\d{1,3})\s+days?\b/,
+    note: 'every 2 days → 每 2 天',
+    rrule: (m) => everyDays(Number(m[1])),
+  },
+  {
+    name: 'en.every-day',
+    re: /\bevery\s+day\b|\bdaily\b/,
+    note: 'every day / daily → 每天',
+    rrule: () => 'FREQ=DAILY',
+  },
+  {
+    name: 'en.every-week',
+    re: /\bevery\s+week\b|\bweekly\b/,
+    note: 'every week / weekly → 每周',
+    rrule: () => 'FREQ=WEEKLY',
+  },
+  {
+    name: 'en.every-month',
+    re: /\bevery\s+month\b|\bmonthly\b/,
+    note: 'every month / monthly → 每月',
+    rrule: () => 'FREQ=MONTHLY',
+  },
+  {
+    name: 'en.every-year',
+    re: /\bevery\s+year\b|\byearly\b|\bannually\b/,
+    note: 'every year / yearly / annually → 每年',
+    rrule: () => 'FREQ=YEARLY',
+  },
+]
+
+/** 具名正则清单：和 WHEN_PATTERNS 一样，给人和测试看的那一份 */
+export const REPEAT_PATTERNS: WhenPattern[] = REPEAT_MATCHERS.map(({ name, re, note }) => ({ name, re, note }))
+
+type RepeatFound = { start: number; end: number; rrule: string | null }
+
+function repeatHit(src: string, matcher: RepeatMatcher): RepeatFound | null {
+  const m = matcher.re.exec(src)
+  if (!m) return null
+  return { start: m.index, end: m.index + m[0].length, rrule: matcher.rrule(m) }
+}
+
+/**
+ * 从一段自由文本里认重复说法。认不出来返回 null，绝不猜。
+ *
+ * 只返回一条规则：一句话里写了两条（"每周一和每周三"）时取最先出现的。
+ * 多天规则（BYDAY=MO,WE）界面上没有对应选项，认了也只能显示成一条改不回去的规则。
+ *
+ * 先按"最早出现、同位置取最长"选语句，**再**看数值合不合法：写的是
+ * "每年 2 月 30 日"就返回 null，不会退化成一个更短的"每年" —— 语法上是那句
+ * 长话，只是日子不存在，这时候按"每年"排反而是错的。
+ *
+ * 返回的 rrule 可以直接写进 `Task.repeat.rrule`。第一次该落在哪天由调用方决定
+ * （界面用的是"今天或之后第一个符合规则的日子"，见 app.ts 的 firstDayOf）。
+ */
+export function parseRepeatIn(text: string): RepeatHit | null {
+  const src = normalize(text)
+  if (!src.trim()) return null
+  const hits: RepeatFound[] = []
+  for (const matcher of REPEAT_MATCHERS) {
+    const hit = repeatHit(src, matcher)
+    if (hit) hits.push(hit)
+  }
+  hits.sort((a, b) => a.start - b.start || b.end - a.end)
+  // 这一处最长的那句如果语法对、数值错，同位置的短规则也别再兜底
+  const dead = new Set<number>()
+  for (const hit of hits) {
+    if (dead.has(hit.start)) continue
+    if (!hit.rrule) { dead.add(hit.start); continue }
+    return {
+      rrule: hit.rrule,
+      // 从原文切：归一化是一对一替换，位置对得上，但用户看到的原样要还回去
+      text: text.slice(hit.start, hit.end),
+      spans: [{ start: hit.start, end: hit.end }],
+    }
+  }
+  return null
 }

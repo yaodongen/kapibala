@@ -105,7 +105,7 @@ Because no file is ever written by two machines, the classic synced-folder failu
 - Notes, with Markdown
 - Start date and time
 - **Drag to reschedule**: in a calendar view, drag a task from one day to another — the time of day stays
-- **Repeating tasks**: daily / weekly on a weekday / weekdays only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, and **every N days** (type 17, say)
+- **Repeating tasks**: daily / weekly on a weekday / weekdays only / weekends only / monthly on a date / **the second Tuesday of every month** / **the last day of every month** / yearly, and **every N days** (type 17, say). Say it in the title — `every day read`, `every weekend run` — and the repeat (plus the first date) is filled in for you
 - One click to complete, one click to delete (into the trash, not gone for good); the trash empties in one click
 - **In progress**: mark a task from the right-click menu and its row lights up with a "Doing" badge
   and moves to the top of its day — if it was already Important it goes to the very front, ahead of
