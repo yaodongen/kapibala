@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.5 — 2026-10-18
+
+- In the continuous calendar, **today**'s date is now a filled accent-coloured pill: a solid block instead of the accent-coloured text that weekends use, so the two no longer look alike — including when today itself falls on a weekend.
+- 连续日历里**今天**那天的日期改成实心强调色胶囊：今天是一个实心块、周末是彩色字，两者不再长得一样 —— 今天正好落在周末时也分得清。
+
 ## 1.12.4 — 2026-10-17
 
 - Marking a task **Doing** now also moves it to the top of its day: below any important tasks, or — if the task was already important — to the very front, ahead of them. The position is written into the data the same way marking Important already worked, so you can still drag it back down afterwards.

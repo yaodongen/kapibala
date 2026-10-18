@@ -184,7 +184,7 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 /* 今天那一格：**只把表头那一条点亮**，格子本体不动。整格染色在一格里堆了十几条任务时
    太重，一片颜色压着任务，反而看不清；表头这一条既够显眼（扫一眼就知道自己站在哪天），
    又不跟任务抢注意力。
-   这一版是"表头底下压一道强调色的线"：底色不铺，日期和周几跟着变成强调色。
+   这一版是"表头底下压一道强调色的线"：表头底色不铺，周几跟着变成强调色。
    为什么不铺底色：一块色砖压在日期下面，深色主题里还容易发糊；一道线只占 2px，
    它干的其实就是表头本来就有的那道 border-bottom，只是换成强调色、加重一档 ——
    分界线还是那条分界线，顺手把"今天"标出来了。
@@ -198,7 +198,21 @@ h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
 .calcell.today .calhead{ border-bottom-color:var(--accent);
                          border-bottom-left-radius:7px; border-bottom-right-radius:7px;
                          box-shadow:0 1px 0 var(--accent) }
-.calcell.today .calhead .dl,
+/* 日期本身再套一个**实心强调色胶囊**，这是和周末分开的关键：连续日历里周六/周日整串
+   日期本来就是强调色（见下面 .calday.we），今天正好落在周末时（两类格子同时命中）
+   光靠那道线分不出来 —— 一个是"块"、一个是"字"，扫一眼就不会混；这个区别不靠色相，
+   深色主题、色弱用户一样认得出。
+   **胶囊不占格子的宽度**：负外边距抵掉自己的左右内边距，日期仍从原来的位置起笔，
+   多出来的 3px 出血到表头自己的内边距里（8px，窄格收成 4px / 3px 时也够；
+   3px 正好压在窄格那档 3px 内边距上，再往外就被 .calhead 的 overflow:hidden 切了）。
+   日期一个字符都不许截，见下面那两条 @container。
+   竖直方向**不加内边距**：表头高 1px，这一格底下的任务行就比邻格低 1px（同上面那条线）。
+   align-self 不能省：.calhead 是 flex 列，不写这一条胶囊会撑满整格宽。
+   4px 圆角、左右各 3px，和 .tag 那套小标记一个手感 */
+.calcell.today .calhead .dl{
+  align-self:flex-start; margin:0 -3px; padding:0 3px; border-radius:4px;
+  background:var(--accent); color:var(--on-accent)
+}
 .calcell.today .calhead .ws{ color:var(--accent) }
 /* 空的一天：一道极淡的横杠。日历空着很正常，别让人以为这格没画出来 */
 .calempty{ padding:6px 8px; color:var(--dim); opacity:.35; font-size:12px }
@@ -270,10 +284,11 @@ body.caldragging, body.caldragging *{ cursor:grabbing !important;
    宽度是 grid 的 1fr 给的，跟内容无关，所以行内尺寸 containment 不影响布局；
    高度照旧由内容撑（只管 inline-size） */
 .calday{ container-type:inline-size; min-height:92px }
-/* 周末：整串日期换成强调色（今天那格也用它，两条优先级相同、靠后生效的那个赢，
-   而今天那格下面还多一条 .calcell.today —— 见那一条）。
-   这一屏列和星期不对齐，扫一屏想认出周末就靠这个颜色 */
-.calday.we .calhead .dl{ color:var(--accent) }
+/* 周末：整串日期换成强调色。这一屏列和星期不对齐，扫一屏想认出周末就靠这个颜色。
+   **今天那格不吃这个颜色**（:not(.today)）：今天的日期是实心胶囊（见 .calcell.today），
+   今天正好落在周末时两条规则都会命中；不排掉这一边，胶囊里的字会和底色一样是强调色，
+   等于看不见 —— 而且"今天是今天"比"今天是周末"重要，这格该听 .calcell.today 那一条 */
+.calday.we:not(.today) .calhead .dl{ color:var(--accent) }
 /* 推演那部分的条数：和真实的分开报（"3+5"），压淡一档 —— 它不是这一天的任务 */
 .calhead .pn{ opacity:.6 }
 /* 表头按格子的实际宽度让位（container query 量的是格子的内容盒；格子没有内边距，
