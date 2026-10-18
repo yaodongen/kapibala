@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.7 — 2026-10-18
+
+- The README is now a landing page: a screenshot banner, a ten-second recording of the real app (scrolling the continuous calendar, dragging a task to another day, opening its Markdown notes), a three-line pitch, a comparison with cloud to-do apps, a one-click download and a star ask. Every screenshot is retaken from 1.12.7 — the old ones still showed the removed 14-day view.
+- README 重做成一张落地页：顶图、10 秒真机录屏（滚动连续日历、把任务拖到另一天、打开 Markdown 备注）、三句话卖点、和云端待办的对比表、一键下载和 star 引导。截图全部按 1.12.7 重截 —— 旧图里还挂着已经删掉的 14d 视图。
+
 ## 1.12.6 — 2026-10-18
 
 - Repeat can now be said in the title: type `每天看书` or `每周末都需要跑步` in the add bar and the repeat rule (plus the first date) is filled in for you — daily, every N days, weekly on a day, weekdays, weekends, monthly on a date / the nth weekday / the last day, yearly, in Chinese or English. The title is left exactly as typed, and a repeat you picked by hand is never overwritten. The repeat menu also gained **Weekends (Sat–Sun)**.
