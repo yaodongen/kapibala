@@ -1,6 +1,6 @@
 {
   "name": "@kapibala/core",
-  "version": "1.12.7",
+  "version": "1.12.8",
   "private": true,
   "type": "module",
   "exports": {

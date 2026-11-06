@@ -2,8 +2,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { existsSync, readdirSync, readFileSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { Store, isNotDownloaded, readRegistry, writeRegistry, type Task } from '@kapibala/core'
-import { compareOrder, orderKey, spreadOrders } from '@kapibala/core/order'
+import { Store, isNotDownloaded, nextSkipAt, readRegistry, writeRegistry, type Task } from '@kapibala/core'
+import { compareOrder, orderBetween, orderKey, spreadOrders } from '@kapibala/core/order'
 import { nodeEnv, placeholderOf, setNoteLogger, withLock } from '@kapibala/adapters-node'
 import { DEFAULT_DETAIL_WIDTH, isRestorableView, isViewId, isWinSlot, LEGACY_SLOT_KEYS,
          normMonthCalCols, platformOf, restorableView, viewSlot, PLATFORM_ARG,
@@ -354,9 +354,16 @@ const write = <T,>(fn: (s: Store) => Promise<T>) => {
   return withLock(s.vault.entry.id, () => fn(s)).then(r => { push(); return r })
 }
 
-/** 本地时区的零点。渲染进程那份是给分组用的；主进程要它，是因为「标记重要」/「标记进行中」
- *  这两个动作由原生右键菜单发起（见 toggleImportant / toggleInProgress），而落点得按"哪一天"算 */
+/** 本地时区的零点。渲染进程那份是给分组用的；主进程要它，是因为右键菜单里的「标记重要」/
+ *  「标记进行中」/「跳到下一个日期」都在主进程执行（见下面），落点得按"哪一天"算 */
 const dayStart = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
+
+/** 菜单项里那句日期："11月9日 周日" / "Nov 9, Sun"。分隔符跟 todaySub 走，和界面其它地方一致 */
+const dayWithWeekday = (ts: number) => {
+  const d = new Date(ts)
+  const L = S()
+  return L.todaySub(L.dayLabel(d), L.weekdays[d.getDay()] ?? '')
+}
 
 /**
  * 标记「重要」/「进行中」要连带写的那条 order：**等于替用户拖了一次**。
@@ -429,6 +436,38 @@ const toggleInProgress = (id: string) => write(async s => {
   await s.setMany(rows)
 })
 
+/**
+ * 「跳到下一个日期」：把这一期挪到规则里的下一次（见 core 的 nextSkipAt）。
+ *
+ * 不动完成状态、不派生新任务 —— 这一期还是同一期，只是排到了下一次。所以它和
+ * "完成了这次、再生成下一期"是两件事：这里没有"做过"的记录，系列也不会断。
+ *
+ * 落点跟"拖到那一天的空白处"一致：接在目标那天最后一行的后面。startAt 和 order
+ * 一次 setMany 写下去（分两次就是两条日志）。
+ */
+const skipOccurrence = (id: string) => write(async s => {
+  const t = s.task(id)
+  if (!t || t.deleted || t.completedAt !== undefined) return
+  const at = nextSkipAt(t)
+  if (at === null) return
+  const day = dayStart(at)
+  // 目标那天还没做完的那些（不含自己），按手排顺序排到最后一条后面
+  const peers = s.tasks()
+    .filter(x => x.id !== id && !x.deleted && x.completedAt === undefined
+                 && x.startAt !== undefined && dayStart(x.startAt) === day)
+    .sort(compareOrder)
+  const rows: FieldOpIpc[] = [{ id, f: 'startAt', val: at }]
+  const order = orderBetween(peers[peers.length - 1]?.order ?? null, null)
+  if (order === null) {
+    // 目标那格的老 key 挤不出空位（见 order.ts）：按"接在最后"把整格重铺一遍，
+    // 和拖拽那条路的兜底一样
+    const ids = [...peers.map(x => x.id), id]
+    rows.push(...spreadOrders(ids).map(r => ({ id: r.id, f: 'order', val: r.key })))
+  } else rows.push({ id, f: 'order', val: order })
+  await s.setMany(rows)
+  log('info', '跳到下一个日期', { id, from: t.startAt, to: at })
+})
+
 /** 包一层：任何 IPC 失败都落盘，否则用户只会说"点了没反应" */
 const handle = (ch: string, fn: (...a: never[]) => unknown) =>
   ipcMain.handle(ch, async (_e, ...args) => {
@@ -463,26 +502,38 @@ handle('task:menu', (id: string) => {
   const t = store?.task(id)
   if (!t || !win) return
   const L = S()
-  const items: Electron.MenuItemConstructorOptions[] = t.deleted
-    ? [
-        { label: L.menuRestore, click: () => void write(s => s.restore(id)) },
-        { type: 'separator' },
-        { label: L.menuPurge, click: () => void write(s => s.purge(id)) },
-      ]
-    : [
-        // 非删除那一支只有这几项：备注在详情栏写、完成在列表的圆圈上点，
-        // 同一个动作不留第二个入口 —— 右键菜单只放任务自己的属性和删除
-        // 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），和"进行中"那种
-        // 临时状态不是一回事，所以放在最前面。两个都会把那条任务排到它该在的位置上
-        // （重要最前、进行中紧跟其后，见 pinOrder）
-        { label: t.important ? L.menuUnimportant : L.menuImportant,
-          click: () => void toggleImportant(id) },
-        { label: t.inProgress ? L.unmarkInProgress : L.menuInProgress,
-          click: () => void toggleInProgress(id) },
-        { type: 'separator' },
-        { label: L.menuDelete, click: () => void write(s => s.trash(id)) },
-      ]
-  log('info', '打开任务右键菜单', { id, deleted: t.deleted })
+  // 「跳到下一个日期」只在"未完成的固定周期任务"上出现：已完成、垃圾桶、
+  // 「完成后 N 天再来」、UNTIL 已到，都没有下一期可跳（见 core 的 nextSkipAt）
+  const skipAt = !t.deleted && t.completedAt === undefined ? nextSkipAt(t) : null
+  const items: Electron.MenuItemConstructorOptions[] = []
+  if (t.deleted) {
+    items.push(
+      { label: L.menuRestore, click: () => void write(s => s.restore(id)) },
+      { type: 'separator' },
+      { label: L.menuPurge, click: () => void write(s => s.purge(id)) },
+    )
+  } else {
+    // 备注在详情栏写、完成在列表的圆圈上点，同一个动作不留第二个入口。
+    // 「重要」是任务自己的属性（周期任务派生下一个实例时继承它），和"进行中"那种
+    // 临时状态不是一回事，所以放在最前面。两个都会把那条任务排到它该在的位置上
+    // （重要最前、进行中紧跟其后，见 pinOrder）。
+    // 「跳到下一个日期」在别处没有入口，而且正是"这一期不做了、往后挪"要用的一下。
+    items.push(
+      { label: t.important ? L.menuUnimportant : L.menuImportant,
+        click: () => void toggleImportant(id) },
+      { label: t.inProgress ? L.unmarkInProgress : L.menuInProgress,
+        click: () => void toggleInProgress(id) },
+    )
+    if (skipAt !== null) items.push({
+      label: L.menuSkipTo(dayWithWeekday(skipAt)),
+      click: () => void skipOccurrence(id),
+    })
+    items.push(
+      { type: 'separator' },
+      { label: L.menuDelete, click: () => void write(s => s.trash(id)) },
+    )
+  }
+  log('info', '打开任务右键菜单', { id, deleted: t.deleted, skipAt })
   Menu.buildFromTemplate(items).popup({ window: win })
 })
 

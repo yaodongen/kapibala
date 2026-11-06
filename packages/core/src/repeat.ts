@@ -68,3 +68,31 @@ export function nextOccurrence(task: Task, completedAt: number):
   }
   return { id: derivedId(seriesId, task.id), startAt, seriesId }
 }
+
+/** 本地时区的零点。这里只用它判断"今天"，不参与 RRULE 的日期计算 */
+const startOfDay = (ts: number) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return +d }
+
+/**
+ * 「跳到下一个日期」该落到哪：右键菜单里把这一期往后挪到规则里的下一次。
+ *
+ * 口径和 nextOccurrence 的固定周期一致 —— 从**这一期自己的日期**往后推，不看现在几点。
+ * 推出来的那一期如果已经过了（连着好几期没做），继续往后收，直到落在今天或之后的
+ * 第一期：一次点击追上今天，不用一周一周连点。今天这一期本身（哪怕它的钟点已经过了）
+ * 仍然是"这一期"，跳过一次就落到下一次 —— 不把"今天"当成过期去追赶。
+ *
+ * 「完成后 N 天再来」没有"下一个日期"可跳：下一期取决于什么时候完成，跟当前日期
+ * 没关系，所以返回 null（菜单里也就不显示这一项）。规则读不懂 / UNTIL 到了 /
+ * 不重复 / 没定日期同样返回 null。
+ *
+ * now 只用来判断"今天"，测试传固定时刻。
+ */
+export function nextSkipAt(task: Task, now = Date.now()): number | null {
+  if (!task.repeat || task.repeat.mode === 'afterCompletion' || task.startAt === undefined)
+    return null
+  const rule = parseRrule(toRruleString(task.repeat))
+  if (!rule) return null
+  const today = startOfDay(now)
+  // 这一期已经逾期：直接问"今天零点起的第一期"，别一期一期往前数
+  if (task.startAt < today) return nextAfter(rule, task.startAt, today - 1)
+  return nextAfter(rule, task.startAt, task.startAt)
+}

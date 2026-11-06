@@ -13,6 +13,7 @@ const computed = (S: Strings): string[] => [
   S.searchSub('report', 3),   // 样例里不能带中文，否则这条测试会冤枉英文那份
   S.bannerBadLines(2),
   S.vaultCantOpen('boom'),
+  S.menuSkipTo('Nov 9, Sun'),
   S.welcomeFailed('boom'),
   S.dayLabel(new Date(2026, 7, 26)),
 ]

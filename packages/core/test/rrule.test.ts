@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { describeRrule, formatRrule, nextAfter, occurrencesBetween, parseRrule, presetsFor } from '../src/rrule.ts'
-import { nextOccurrence, toRruleString } from '../src/repeat.ts'
+import { nextOccurrence, nextSkipAt, toRruleString } from '../src/repeat.ts'
 import { derivedId } from '../src/ids.ts'
 import type { Task } from '../src/types.ts'
 
@@ -341,5 +341,58 @@ describe('周期实例的生成', () => {
     const b = nextOccurrence(t, at('2026-09-10T23:00'))!
     expect(day(a.startAt)).toBe('Sun Sep 13 2026')
     expect(a.id).toBe(b.id)                       // 同一天内多次完成不分叉
+  })
+})
+
+describe('跳到下一个日期', () => {
+  const base = (repeat: Task['repeat'], startAt: string): Task => ({
+    id: 'T', title: '看电影', isAllDay: false, reminders: [], order: '', createdAt: 0,
+    deleted: false, startAt: at(startAt), repeat, inProgress: false, important: false,
+  })
+  const skipDay = (t: Task, now: string) => day(nextSkipAt(t, at(now)))
+
+  it('这周日没去：跳到下周日', () => {
+    const t = base({ rrule: 'FREQ=WEEKLY;BYDAY=SU' }, '2026-11-08T14:00')
+    expect(skipDay(t, '2026-11-08T20:00')).toBe('Sun Nov 15 2026')
+  })
+
+  it('逾期好几期：一次点落到今天或之后的第一期', () => {
+    // 今天 11/6 周五，最近的那个周日是 11/8
+    const t = base({ rrule: 'FREQ=WEEKLY;BYDAY=SU' }, '2026-10-18T14:00')
+    expect(skipDay(t, '2026-11-06T22:00')).toBe('Sun Nov 08 2026')
+  })
+
+  it('今天就是周日、这一期已经逾期：落到今天，不跳过今天这一次', () => {
+    const t = base({ rrule: 'FREQ=WEEKLY;BYDAY=SU' }, '2026-11-01T14:00')
+    expect(skipDay(t, '2026-11-08T09:00')).toBe('Sun Nov 08 2026')
+  })
+
+  it('还没到的那一期：往后推一个周期', () => {
+    const t = base({ rrule: 'FREQ=WEEKLY;BYDAY=SU' }, '2026-11-15T14:00')
+    expect(skipDay(t, '2026-11-06T22:00')).toBe('Sun Nov 22 2026')
+  })
+
+  it('只改日期，几点几分不动', () => {
+    const t = base({ rrule: 'FREQ=DAILY' }, '2026-11-06T19:30')
+    const next = nextSkipAt(t, at('2026-11-06T23:00'))!
+    expect(new Date(next).getHours()).toBe(19)
+    expect(new Date(next).getMinutes()).toBe(30)
+  })
+
+  it('每月最后一天：逾期时也按规则落到月末', () => {
+    const t = base({ rrule: 'FREQ=MONTHLY;BYMONTHDAY=-1' }, '2026-01-31T09:00')
+    expect(skipDay(t, '2026-02-10T09:00')).toBe('Sat Feb 28 2026')
+  })
+
+  it('afterCompletion 没有"下一个日期"可跳', () => {
+    const t = base({ rrule: 'FREQ=DAILY;INTERVAL=3', mode: 'afterCompletion' }, '2026-11-06T09:00')
+    expect(nextSkipAt(t, at('2026-11-06T10:00'))).toBeNull()
+  })
+
+  it('UNTIL 到了 / 不重复 / 规则读不懂都返回 null', () => {
+    const ended = base({ rrule: 'FREQ=DAILY;UNTIL=20261106' }, '2026-11-06T09:00')
+    expect(nextSkipAt(ended, at('2026-11-06T10:00'))).toBeNull()
+    expect(nextSkipAt(base(undefined, '2026-11-06T09:00'), at('2026-11-06T10:00'))).toBeNull()
+    expect(nextSkipAt(base({ rrule: 'FREQ=HOURLY' }, '2026-11-06T09:00'), at('2026-11-06T10:00'))).toBeNull()
   })
 })

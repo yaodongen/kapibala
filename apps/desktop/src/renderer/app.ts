@@ -579,17 +579,18 @@ function setLang(next: Lang) {
 /** 选中它就展开一个输入框，让用户自己填天数 —— "每 17 天"这种预设列不完 */
 const CUSTOM = '__custom__'
 const dailyEvery = (n: number) => `FREQ=DAILY;INTERVAL=${n}`
-/** 已经是"每 N 天"的规则，把 N 取出来当输入框的默认值 */
-function everyDays(rrule: string | undefined): number | null {
-  const m = /^FREQ=DAILY;INTERVAL=(\d+)$/.exec(rrule ?? '')
-  return m ? Number(m[1]) : null
-}
 
-/** 「每 [17] 天」这一小段。中英文里数字的位置不一样，所以前后缀都从字典取 */
-function customDays(id: string, value: number | null): string {
+/**
+ * 「每 [17] 天」这一小段。中英文里数字的位置不一样，所以前后缀都从字典取。
+ *
+ * 一律空着出现：从"每 14 天"改成别的天数时，预填的 14 得先删掉才能打，
+ * 反而碍事；空框聚焦后直接敲就行。用 type=text 而不是 number —— number 带上下
+ * 箭头，还放过 e / + / - / .，"只能填数字"得自己拦（见下面的 input 监听）。
+ */
+function customDays(id: string): string {
   return `<span class="customdays">${esc(S.customEvery)}` +
-    `<input type="number" min="1" max="999" id="${id}" title="${esc(S.customDaysTip)}"` +
-    ` placeholder="17" value="${value ?? ''}">${esc(S.customDaysUnit)}</span>`
+    `<input type="text" inputmode="numeric" maxlength="3" id="${id}"` +
+    ` title="${esc(S.customDaysTip)}" placeholder="17" value="">${esc(S.customDaysUnit)}</span>`
 }
 
 function repeatSelect(id: string, at: number, current?: Task['repeat']): string {
@@ -1383,7 +1384,7 @@ function renderDetail() {
                         aria-label="${esc(S.clearTime)}">✕</button>` : '') +
     `</span>` +
     repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
-    (customFor === 'detail' ? customDays('dcustom', everyDays(t.repeat?.rrule)) : '') +
+    (customFor === 'detail' ? customDays('dcustom') : '') +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
   if (!typingNote) $('dbody').innerHTML = editing
@@ -2040,9 +2041,9 @@ function syncNewRepeat(keepOverride?: string | null) {
   ri.value = keep && Array.from(ri.options).some(o => o.value === keep) ? keep : ''
 }
 
-/** 添加栏那个"每 [ ] 天"：null 表示收起来 */
-function renderNewCustom(value: number | null) {
-  $('newcustom').innerHTML = customFor === 'new' ? customDays('newcustom-input', value) : ''
+/** 添加栏那个"每 [ ] 天"：customFor 不是 new 就收起来 */
+function renderNewCustom() {
+  $('newcustom').innerHTML = customFor === 'new' ? customDays('newcustom-input') : ''
 }
 
 function focusCustom(id: string) {
@@ -2078,8 +2079,24 @@ function commitCustomDays(el: HTMLInputElement) {
     ri.innerHTML += `<option value="${esc(rrule)}">${esc(describeRrule(rrule, lang))}</option>`
     ri.value = rrule
   } else ri.value = ''
-  renderNewCustom(null)
+  renderNewCustom()
 }
+
+/**
+ * 「每 [ ] 天」只收数字。type=text 没有 number 那套自带过滤，粘贴、输入法都可能
+ * 混进别的东西；这里统一洗一遍，保证 value 里永远只有 0-9。全角数字（中文输入法
+ * 打出来的１２）顺手转成半角，别让人以为"打了没反应"。maxlength 拦不住粘贴和
+ * 程序赋值，超过 3 位（上限 999）自己截。
+ */
+document.addEventListener('input', (e) => {
+  const el = (e.target as HTMLElement).closest<HTMLInputElement>('.customdays input')
+  if (!el) return
+  const digits = el.value
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/\D+/g, '')
+    .slice(0, 3)
+  if (el.value !== digits) el.value = digits
+})
 
 document.addEventListener('keydown', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLInputElement>('.customdays input')
@@ -2371,9 +2388,9 @@ document.addEventListener('change', (e) => {
     repeatManual = true
     repeatAuto = false
     const v = ri.value
-    if (v === CUSTOM) { customFor = 'new'; renderNewCustom(null); focusCustom('newcustom'); return }
+    if (v === CUSTOM) { customFor = 'new'; renderNewCustom(); focusCustom('newcustom'); return }
     customFor = null
-    renderNewCustom(null)
+    renderNewCustom()
   }
   if (el.id === 'newDate') {
     // change 只在用户真的动了控件时来（代码赋 value 不触发），所以这里就是"他手动选了"

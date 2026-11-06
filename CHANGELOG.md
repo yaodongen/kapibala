@@ -2,6 +2,11 @@
 
 All notable changes to Kapibala, newest first. One entry per released version: date, version, one line per language. Dates follow the commit date of that version in git.
 
+## 1.12.8 — 2026-11-06
+
+- Recurring tasks can now be skipped from the right-click menu: **Skip to the next date** (the target date is shown in the item) moves this occurrence to the next one without marking it done or creating a new task — if it is several periods overdue, one click jumps to the first occurrence today or later, and it lands after the existing tasks of that day. The item works in every view and only appears on unfinished fixed-schedule tasks. The "every N days" field also opens empty now and accepts digits only (full-width digits are converted, pasted and IME input is cleaned up), so changing an interval no longer means deleting the prefilled number first.
+- 周期任务可以在右键菜单里**跳到下一个日期**了：把这一期挪到规则里的下一次（菜单上直接写着目标日期），不标完成、也不另生成任务；逾期好几期时一次点就追到今天或之后的第一期，落在目标那天已有任务的后面。每个视图都能用，只在未完成的固定周期任务上出现。「每 N 天」的输入框也改成打开时是空的、只收数字（全角数字自动转半角，粘贴和输入法带进来的字符会被洗干净），改天数时不用先删掉旧值，也没有数字输入框的上下箭头了。
+
 ## 1.12.7 — 2026-10-18
 
 - The README is now a landing page: a screenshot banner, a ten-second recording of the real app (scrolling the continuous calendar, dragging a task to another day, opening its Markdown notes), a three-line pitch, a comparison with cloud to-do apps, a one-click download and a star ask. Every screenshot is retaken from 1.12.7 — the old ones still showed the removed 14-day view.

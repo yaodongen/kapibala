@@ -219,6 +219,11 @@ const ZH = {
   menuInProgress: '标记 Doing',
   menuImportant: '标记重要',
   menuUnimportant: '取消重要',
+  /**
+   * 右键菜单里"跳到下一个日期"那一项。**把目标日期写进标题**：菜单一关就看不到
+   * 它跳到哪天去了，写出来点之前就知道会落到哪一天（日期由主进程按当前语言拼好）。
+   */
+  menuSkipTo: (day: string) => `跳到下一个日期（${day}）`,
   menuDelete: '删除',
   menuRestore: '恢复',
   menuPurge: '彻底删除',
@@ -356,6 +361,7 @@ const EN: typeof ZH = {
   menuInProgress: 'Mark Doing',
   menuImportant: 'Mark as important',
   menuUnimportant: 'Clear important',
+  menuSkipTo: (day) => `Skip to the next date (${day})`,
   menuDelete: 'Delete',
   menuRestore: 'Restore',
   menuPurge: 'Delete for good',
