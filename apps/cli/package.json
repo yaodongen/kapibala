@@ -1,6 +1,6 @@
 {
   "name": "kapi",
-  "version": "1.12.8",
+  "version": "1.12.9",
   "private": true,
   "type": "module",
   "bin": {

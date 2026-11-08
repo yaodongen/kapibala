@@ -46,8 +46,8 @@ describe('restorableView：ui.json 里躺着的视图 id', () => {
     expect(restorableView('calendarFlow')).toBe('calendarFlow')
   })
 
-  it('已完成 / 垃圾桶不记（那里只是顺路看一眼），严格来说不是"存过"', () => {
-    for (const v of ['done', 'trash']) {
+  it('已完成 / 统计 / 垃圾桶不记（那里只是顺路看一眼），严格来说不是"存过"', () => {
+    for (const v of ['done', 'stats', 'trash']) {
       expect(isViewId(v)).toBe(true)
       expect(restorableView(v)).toBeNull()
     }

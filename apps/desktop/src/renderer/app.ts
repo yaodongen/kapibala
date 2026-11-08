@@ -12,6 +12,10 @@ import { parseRepeatIn, parseWhenIn } from '@kapibala/core/when'
 // 纯函数，和 markdown / rrule 一样只从子路径引。拖拽排序的落点算法在 core 里，有单测
 import { compareOrder, orderBetween, spreadOrders } from '@kapibala/core/order'
 import { matchContext, searchTasks } from '@kapibala/core/search'
+// 纯函数，和 rrule / order 一样只从子路径引：统计这一屏的全部算法都在 core 里
+import { countsInRange, expectedInRange, groupPeriodBuckets, periodView, seriesDoneCount,
+         shiftAnchor, summarize,
+         type StatsPeriod, type PeriodView, type RepeatGroup, type Stats } from '@kapibala/core/stats'
 import { addDays, DEFAULT_DETAIL_WIDTH, MONTH_CAL_COLS, viewSlot, WIN_SLOTS,
          type Api, type FieldOpIpc, type Theme,
          type VaultState, type ViewId, type WinSlot } from '@kapibala/ipc'
@@ -82,8 +86,9 @@ const dayFull = (ts: number) => S.todaySub(absDay(ts), weekday(ts))
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
 
 /**
- * 不做清单，所以就这 8 项。名字和副标题都从字典取，键名和视图 id 对齐。
+ * 不做清单，所以就这 9 项。名字和副标题都从字典取，键名和视图 id 对齐。
  * id 那一层在 ipc 里（主进程要拿它校验 ui.json、分窗口大小），这里只管怎么画。
+ * 顺序和 VIEW_IDS 一致：统计挨着「已完成」，同属回头看一眼的那一段。
  */
 const VIEWS = [
   { id: 'today', ico: '☀', sub: () => S.todaySub(dayLabel(today()), weekday(today())) },
@@ -95,6 +100,7 @@ const VIEWS = [
   { id: 'calendarFlow', ico: '▧', sub: () => S.calendarFlowSub },
   { id: 'all',   ico: '≡', sub: () => S.allSub },
   { id: 'done',  ico: '✓', sub: () => S.doneSub },
+  { id: 'stats', ico: '∑', sub: () => S.statsSub },
   { id: 'trash', ico: '␥', sub: () => S.trashSub },
 ] as const satisfies readonly { id: ViewId; ico: string; sub: () => string }[]
 
@@ -127,6 +133,25 @@ let vault: VaultState | null = null
  */
 const DEFAULT_VIEW: ViewId = 'next7'
 let view: ViewId = DEFAULT_VIEW
+/**
+ * 上一次 render 画的是不是统计面板。统计页和任务列表是两套完全不同的 DOM：
+ * 统计卡片没有 [data-task]，keepScroll() 的锚点接不住，切进来时旧的 scrollTop
+ * 会原样留着 —— 人就落在面板中间了。只有连续两次都画统计面板才该保留位置。
+ */
+let statsShown = false
+/**
+ * 全统计页**共用一份**周期设置：柱状图、列表的本期次数、列表的小柱都看它。
+ * 一个设置就够了，两套反而要费劲记住「刚才切的是上面还是下面」。纯界面状态，不写盘。
+ * 只给周 / 月 / 年三档 —— 「日」这一级在周期性任务上几乎全是空柱子。
+ * 从别的视图切进来会回到当前这一期（见 setView）；在这一屏里搜索 / 清搜索不算离开。
+ */
+const PERIOD_TABS: ReadonlyArray<{ id: StatsPeriod; label: () => string }> = [
+  { id: 'week', label: () => S.statsPeriodWeek },
+  { id: 'month', label: () => S.statsPeriodMonth },
+  { id: 'year', label: () => S.statsPeriodYear },
+]
+let periodKind: StatsPeriod = 'week'
+let periodAnchor = Date.now()
 /**
  * 日历视图要不要显示已完成的任务（顶栏那个开关）。默认关 —— 日历首先是看安排的。
  * 打开后打过钩的也留在格子里，**仍然挂在原来安排的那天**（不是完成那天）——
@@ -320,6 +345,11 @@ function pick(v: ViewId): Task[] {
   // 已完成视图里取消勾选也一样，先留一秒
   if (v === 'done') return alive().filter(t => t.completedAt || leaving.has(t.id))
     .sort((a, b) => (doneAtOf(b) ?? 0) - (doneAtOf(a) ?? 0))
+  /**
+   * 「统计」不画任务行：整屏由 core 的 summarize() 从全库算出来（见 statsHtml）。
+   * 返回空列表 → 侧栏也不给它报条数，它不是一个"还剩几条"的清单。
+   */
+  if (v === 'stats') return []
   return tasks.filter(t => t.deleted)
 }
 
@@ -428,6 +458,34 @@ function calendarCells(list: Task[], days: number): CalCell[] {
 }
 
 const $ = (id: string) => document.getElementById(id)!
+
+/* ── 统计页的即时提示 ───────────────────────────────────────────
+ * 原生 title 要等浏览器自己那几秒才弹，看柱子时「这一格到底几次」得干等。
+ * 统一换成 data-tip + 一个挂在 body 上的浮层：pointerover 一到就填字、就显示，
+ * 没有淡入也没有定时器。用事件委托，因为 render() 每次都把列表整个重建。
+ */
+const statTip = $('stattip')
+let statTipFor: Element | null = null
+const hideStatTip = () => { statTip.hidden = true; statTipFor = null }
+document.addEventListener('pointerover', (e) => {
+  const el = e.target instanceof Element
+    ? e.target.closest<HTMLElement>('[data-tip]') : null
+  if (!el) { hideStatTip(); return }
+  if (el === statTipFor) return
+  statTipFor = el
+  statTip.textContent = el.dataset['tip'] ?? ''
+  statTip.hidden = false
+  const r = el.getBoundingClientRect()
+  const w = statTip.offsetWidth, h = statTip.offsetHeight
+  const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8))
+  const above = r.top - h - 8
+  const top = above < 8 ? r.bottom + 8 : above
+  statTip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`
+})
+// 点下去、滚一下、窗口失焦、或者列表被重画时都收起来：别留着一个指着旧格子的数字
+document.addEventListener('pointerdown', hideStatTip)
+window.addEventListener('scroll', hideStatTip, true)
+window.addEventListener('blur', hideStatTip)
 
 /**
  * index.html 里写死的那几十个字。语言一变就整块重刷，
@@ -660,24 +718,45 @@ function keepScroll(): () => void {
 }
 
 function render() {
+  hideStatTip()   // 列表整个重建了，旧提示可能还指着一个已经不存在的格子
   // 这一次重画是按哪一天画的。跨天刷新靠它认（见 followToday）—— 其它原因
   // （同步、勾选、换视图）触发的重画也走这儿，顺带就把日期翻篇了
   shownDay = today()
+  /**
+   * results / stats 得提前算：滚动位置要在 keepScroll() 抓锚点之前归位。
+   * 「有没有统计面板」一变（切进来、切出去、在统计页里搜东西、清空搜索），
+   * 上一屏的 scrollTop 就不作数了，回到顶部；连续两次都是统计页才把位置留着。
+   */
+  const results = query.trim() ? searchTasks(alive(), query) : null
+  /** 「统计」：整屏换成概览 + 点阵 + 排行。搜索时和日历一样退回普通列表 */
+  const stats = !results && view === 'stats'
+  const statsScroll = stats && statsShown ? $('list').scrollTop : 0
+  if (stats !== statsShown) $('list').scrollTop = 0
+  statsShown = stats
+  /**
+   * 统计这一屏看标题就够，右侧详情栏整块收起。用 class 而不是 setDetailCollapsed()：
+   * 后者会写进 ui.json 的 'other' 分组，连「今天」「最近 7 天」也一起收起来。
+   * 那枚 »/« 按钮同时藏掉 —— 这一屏没有「展开详情」这回事，留着只会点了没反应。
+   * 搜索时退回任务列表，详情栏照常回来（点了搜索结果还要看备注）。
+   */
+  ;(document.querySelector('.app') as HTMLElement).classList.toggle('stats-nopane', stats)
+  ;($('detailtoggle') as HTMLElement).hidden = stats
   const restoreTitleEdit = keepTitleEdit()
   const restoreScroll = keepScroll()
   $('nav').innerHTML = VIEWS.map(v => {
     const n = pick(v.id).length
-    // 已完成 / 垃圾桶和前面那 7 个列表之间隔一条线（按 id 认，别数下标 —— 加一个视图就错位）
+    // 「回头看」那几屏和前面的清单之间隔一条线（按 id 认，别数下标 —— 加一个视图就错位）
     return (v.id === 'done' ? '<div class="sep"></div>' : '') +
       `<button class="nav ${v.id === view ? 'on' : ''}" data-view="${v.id}">` +
       `<span class="ico">${v.ico}</span>${esc(S[v.id])}${n ? `<span class="n">${n}</span>` : ''}</button>`
   }).join('')
 
   const v = VIEWS.find(x => x.id === view)!
-  const results = query.trim() ? searchTasks(alive(), query) : null
   $('vtitle').textContent = results ? S.searchTitle : S[v.id]
   $('vsub').textContent = results ? S.searchSub(query.trim(), results.length) : v.sub()
-  ;($('addbar') as HTMLElement).style.display = view === 'done' || view === 'trash' ? 'none' : 'flex'
+  // 统计是回头看的一屏，不该在这里塞一条新任务进去（和已完成 / 垃圾桶一样）
+  ;($('addbar') as HTMLElement).style.display =
+    view === 'done' || view === 'stats' || view === 'trash' ? 'none' : 'flex'
   // 清空按钮：只在垃圾桶里、且真有东西可清的时候才出现
   const purge = $('purgeall') as HTMLButtonElement
   purge.textContent = S.purgeAll
@@ -727,10 +806,25 @@ function render() {
   setProjectSwitch()
   $('list').classList.toggle('cal', !!cal)
   $('list').classList.toggle('calflow', flow)
+  $('list').classList.toggle('statsview', stats)
   // 连续日历的顶栏（月份 / 每行几列 / 回到今天）。7d 没有这套东西，整块收起来
   const tools = $('caltools') as HTMLElement
   tools.innerHTML = flow ? calTools() : ''
   tools.hidden = !flow
+  /**
+   * 「统计」不走任务行那条路：列表整个换成统计面板。这一屏不显示详情栏，
+   * 面板里的卡片和行都只是信息，不能点选任务。开关、格子布局在上面已经按
+   * stats=false 收好了。搜索时不进这一支 —— 统计看的是全库，搜一半没有意义。
+   */
+  if (stats) {
+    renderDetail()
+    const listEl = $('list')
+    listEl.innerHTML = statsHtml(summarize(tasks))
+    // 整块换了 DOM 之后把位置放回去：切进来是 0（顶部），页内重画则是刚才看到的地方
+    listEl.scrollTop = statsScroll
+    restoreTitleEdit()
+    return
+  }
   if (cal) {
     $('list').style.setProperty('--cal-cols', String(cal.cols))
     renderDetail()
@@ -799,17 +893,235 @@ function render() {
   restoreTitleEdit()
 }
 
+/** 周期标题里的日期范围。纯数字，中英文都这么写（2026/11/2 – 2026/11/8） */
+const ymd = (ts: number) => {
+  const d = new Date(ts)
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${String(d.getDate()).padStart(2, '0')}`
+}
+function periodRange(pv: PeriodView): string {
+  if (pv.kind === 'week') return `${ymd(pv.start)} – ${ymd(addDays(pv.end, -1))}`
+  if (pv.kind === 'month') {
+    const d = new Date(pv.start)
+    return `${d.getFullYear()}/${d.getMonth() + 1}`
+  }
+  return String(new Date(pv.start).getFullYear())
+}
+
+/** 一根柱子的悬浮文案和底下的刻度。柱子多的时候刻度留空，别糊成一片 */
+function bucketLabels(kind: StatsPeriod, start: number, i: number): { tip: string; x: string } {
+  const d = new Date(start)
+  if (kind === 'week') return { tip: dayFull(start), x: S.weekdays[(i + 1) % 7]! }
+  if (kind === 'month') {
+    const day = d.getDate()
+    return { tip: dayFull(start), x: day === 1 || day % 5 === 0 ? String(day) : '' }
+  }
+  return { tip: `${d.getFullYear()} ${S.statsMonthName(d)}`, x: String(i + 1) }
+}
+
+/**
+ * 全页共用的一条周期设置：分段 + 前后翻页 + 本期区间和次数。
+ * 放在最近一年的点阵和下面两块受它影响的面板之间，一眼看出「这个设置管的是下面」。
+ */
+function periodBar(pv: PeriodView): string {
+  const tabs = PERIOD_TABS.map(t =>
+    `<button class="st-seg ${t.id === pv.kind ? 'on' : ''}" data-period="${t.id}"` +
+    ` aria-pressed="${t.id === pv.kind}">${esc(t.label())}</button>`).join('')
+  const arrow = (dir: number, tip: string, disabled: boolean) =>
+    `<button class="st-step" data-period-step="${dir}"` +
+    ` data-tip="${esc(tip)}" aria-label="${esc(tip)}"${disabled ? ' disabled' : ''}>${
+      dir < 0 ? '‹' : '›'}</button>`
+  return `<div class="st-periodbar">
+    <div class="st-segs" role="group" aria-label="${esc(S.statsPeriodLabel)}">${tabs}</div>
+    <div class="st-pnav">
+      ${arrow(-1, S.statsPeriodPrev, false)}
+      <b>${esc(periodRange(pv))} · ${esc(S.statsTimes(pv.total))}</b>
+      ${arrow(1, S.statsPeriodNext, !pv.hasNext)}
+    </div>
+  </div>`
+}
+
+/** 周期柱状图：一排胶囊柱，按本期最大值归一，空的一期就全是淡槽 */
+function chartPanel(pv: PeriodView): string {
+  const max = Math.max(1, ...pv.buckets.map(b => b.count))
+  const cols = pv.buckets.map((b, i) => {
+    const h = b.count === 0 ? 0 : Math.max(8, Math.round(b.count / max * 100))
+    const { tip, x } = bucketLabels(pv.kind, b.start, i)
+    return `<div class="st-col" data-tip="${esc(S.statsHeatTip(tip, b.count))}">` +
+      `<div class="st-track"><i class="st-fill" style="height:${h}%"></i></div>` +
+      `<span class="st-x">${esc(x)}</span></div>`
+  }).join('')
+  return `<section class="st-panel">
+    <div class="st-panelhead"><b>${esc(S.statsChartTitle)}</b><span>${esc(periodRange(pv))}</span></div>
+    <div class="st-chart">${cols}</div>
+  </section>`
+}
+
+/**
+ * 「统计」这一屏的全部 HTML。数字和分布都是 core 的 summarize() 算好的，这里只摆：
+ * 三张概览卡 → 滚动最近一年的点阵 → 周期柱状图 → 每件周期性任务一行。
+ *
+ * 口径上刻意不做「连续多少天」「断了没有」：这个应用不催人，这一屏是回头看一眼自己
+ * 做过什么，不是给自己记考勤。未来几天的格子留白而不是写成「还差几天」。
+ */
+function statsHtml(st: Stats): string {
+  // 一份周期设置同时管：柱状图、列表的本期次数、应完成次数、列表每行的柱图
+  const pv = periodView(tasks, periodKind, periodAnchor)
+  const inPeriod = countsInRange(tasks, pv.start, pv.end)
+  const expected = expectedInRange(tasks, pv.start, pv.end)
+  const detail = groupPeriodBuckets(tasks, pv.kind, periodAnchor)
+  const cards = [
+    { label: S.statsTotal, n: st.totalDone, note: S.statsTotalNote(st.repeatDone) },
+    { label: S.statsSeries, n: st.groups.length, note: S.statsSeriesNote },
+    { label: S.statsLast30, n: st.last30, note: S.statsLast30Note },
+  ].map(c => `<div class="st-card"><span class="st-clabel">${esc(c.label)}</span>` +
+             `<strong class="st-cnum">${c.n}</strong>` +
+             `<span class="st-cnote">${esc(c.note)}</span></div>`).join('')
+
+  /**
+   * 点阵照 GitHub 贡献图摆：一行 = 同一个周几的最近 53 周，一列 = 一周。
+   * core 的 weeks 是「一周里的 7 天」，这里转置一下，只是摆法不同。
+   * 列数写进 --st-cols 交给 CSS，月份行和格子行共用同一个列数才对得齐。
+   */
+  const heat = Array.from({ length: 7 }, (_, dow) =>
+    st.weeks.map(w => {
+      const n = w.days[dow]!
+      if (n === null) return `<i class="st-cell future"></i>`
+      const lv = Math.min(n, 4)          // 五档：空 / 1 / 2 / 3 / 4 次以上
+      return `<i class="st-cell lv${lv}" data-tip="${esc(S.statsHeatTip(dayFull(addDays(w.start, dow)), n))}"></i>`
+    }).join('')).join('')
+  /**
+   * 月份标签按每周周首所在的月份定位到那一列；挨得太近的月份跳过，别糊成一片。
+   * 末尾一两个月的标签右对齐（文字比列宽，往右写会捅出面板）；右对齐会让文字往左伸，
+   * 窄容器里可能和前一个月的文字贴住 —— 给前一个打上 near-end，由 CSS 在窄容器里藏掉。
+   */
+  const monthLabels = (() => {
+    let lastMonth = -1, lastCol = -99
+    const items: Array<{ i: number; text: string; nearEnd?: boolean }> = []
+    st.weeks.forEach((w, i) => {
+      const d = new Date(w.start)
+      const month = d.getFullYear() * 12 + d.getMonth()
+      if (month === lastMonth) return
+      lastMonth = month
+      if (i - lastCol < 3) return
+      lastCol = i
+      items.push({ i, text: S.statsMonthName(d) })
+    })
+    const last = items.at(-1)
+    if (last && last.i > st.weeks.length - 3) {
+      const prev = items.at(-2)
+      // 月份之间正常隔 4 列；末尾标签右对齐会再往左缩一个字宽，4 列在窄容器里就不够了
+      if (prev && last.i - prev.i <= 4) prev.nearEnd = true
+    }
+    return items.map(x => {
+      const cls = [x.i > st.weeks.length - 3 ? 'end' : '', x.nearEnd ? 'near-end' : '']
+        .filter(Boolean).join(' ')
+      return `<span${cls ? ` class="${cls}"` : ''} style="grid-column:${x.i + 1}">${esc(x.text)}</span>`
+    }).join('')
+  })()
+  /** 只标周一 / 周三 / 周五三行，和 GitHub 一样留白，不把七行都写上字 */
+  const dows = Array.from({ length: 7 }, (_, dow) =>
+    `<span>${dow === 0 || dow === 2 || dow === 4
+      ? esc(S.weekdays[(dow + 1) % 7]!) : ''}</span>`).join('')
+  // 左下说明口径，右下 Less → More 五档图例（和 GitHub 贡献图同一套摆法）
+  const legend = `<div class="st-legend"><span>${esc(S.statsHeatHint)}</span>` +
+    `<span class="st-scale"><span>${esc(S.statsHeatLess)}</span>${
+      [0, 1, 2, 3, 4].map(lv => `<i class="st-cell lv${lv}"></i>`).join('')
+    }<span>${esc(S.statsHeatMore)}</span></span></div>`
+  // 这一屏按「本期几次」排，本期没做过的排在后面（仍留着，累计次数还在下面那行）
+  const rows = st.groups.length
+    ? [...st.groups]
+        .sort((a, b) => (inPeriod.get(b.key) ?? 0) - (inPeriod.get(a.key) ?? 0)
+          || b.count - a.count || b.lastAt - a.lastAt)
+        .map(g => statRow(g, inPeriod, expected, detail, pv)).join('')
+    : `<div class="st-empty"><b>${esc(S.statsEmpty)}</b><span>${esc(S.statsEmptySub)}</span></div>`
+
+  return `<div class="st-wrap">
+    <div class="st-cards">${cards}</div>
+    <section class="st-panel">
+      <div class="st-panelhead"><b>${esc(S.statsHeatTitle)}</b><span>${esc(S.statsActiveDays(st.activeDays))}</span></div>
+      <div class="st-heat" style="--st-cols:${st.weeks.length}">
+        <div class="st-months">${monthLabels}</div>
+        <div class="st-dows">${dows}</div>
+        <div class="st-heatgrid">${heat}</div>
+      </div>
+      ${legend}
+    </section>
+    ${periodBar(pv)}
+    ${chartPanel(pv)}
+    <section class="st-panel st-rows-panel">
+      <div class="st-panelhead"><b>${esc(S.statsSection)}</b><span>${esc(S.statsSectionSub(st.groups.length))}</span></div>
+      <div class="st-rows">${rows}</div>
+    </section>
+  </div>`
+}
+
+/**
+ * 一件周期性任务。右上角是「完成 N/M 次」：N 是这一期真正勾掉的，M 是按重复规则
+ * 到此刻为止应该排到的次数（core 的 expectedInRange）。算不出 M 的组仍只写 N 次。
+ * 柱图和上面的「完成分布」同款、共用同一批桶，但只算这一组：周看周一到周日、
+ * 月看每天、年看 12 个月。共享周期一变就一起变。
+ * 这一屏没有详情栏，整行只是信息、不可点；悬浮高亮只是让人看清指的是哪一行。
+ */
+function statRow(g: RepeatGroup, inPeriod: Map<string, number>, expected: Map<string, number>,
+                 detail: ReturnType<typeof groupPeriodBuckets>, pv: PeriodView): string {
+  const rule = g.rule ? `<span class="tag rep">${esc(describeRepeat(g.rule, lang))}</span>` : ''
+  const here = inPeriod.get(g.key) ?? 0
+  const want = expected.get(g.key)
+  // 补勾、漏勾后补做、或规则中途改过，分母可能被完成次数反超 —— 至少不小于已完成，
+  // 避免出现「5/3 次」这种倒挂；进度条也一律夹在 100% 以内。
+  const total = want === undefined ? null : Math.max(want, here)
+  const score = total === null
+    ? `<span class="st-rnum${here ? '' : ' zero'}">${esc(S.statsTimes(here))}</span>`
+    : scoreBadge(here, total, want!)
+  const series = detail.byGroup.get(g.key) ?? detail.buckets.map(() => 0)
+  const max = Math.max(1, ...series)
+  // 和 chartPanel 用完全相同的 .st-col / .st-track / .st-fill 结构，
+  // 于是每行柱子的位置、宽度、圆角都跟上面那排对得上，一眼能对应「周一做没做」
+  const bars = detail.buckets.map((b, i) => {
+    const n = series[i] ?? 0
+    const h = n === 0 ? 0 : Math.max(8, Math.round(n / max * 100))
+    const tip = bucketLabels(pv.kind, b.start, i).tip
+    return `<span class="st-col" data-tip="${esc(S.statsHeatTip(tip, n))}">` +
+      `<span class="st-track"><i class="st-fill" style="height:${h}%"></i></span></span>`
+  }).join('')
+  return `<div class="st-row">` +
+    `<span class="st-rhead"><span class="st-rtitle">${esc(g.title)}</span>${rule}${score}</span>` +
+    `<span class="st-rowchart">${bars}</span>` +
+    `<span class="st-rmeta">${esc(S.statsAllTime(g.count))} · ${
+      esc(S.statsFirst(absDay(g.firstAt)))} · ${esc(S.statsLast(absDay(g.lastAt)))}</span>` +
+    `</div>`
+}
+
+/**
+ * 「完成 12/15 次」：数字分层次，底下一道细进度条；做满时那道条深一档。
+ * total 是显示用的分母（补勾时至少等于 done）；ruleTotal 是规则真正排到的次数，
+ * 只给悬浮说明 —— 别把夹过的数字说成「按规则应完成」。
+ */
+function scoreBadge(done: number, total: number, ruleTotal: number): string {
+  const pct = Math.min(100, Math.round(done / total * 100))
+  return `<span class="st-score${pct >= 100 ? ' full' : ''}" data-tip="${
+    esc(S.statsExpectedTip(done, ruleTotal))}">` +
+    `<span class="st-scoreline"><em>${esc(S.statsDoneWord)}</em>` +
+    `<b${done ? '' : ' class="zero"'}>${done}</b><i>/</i><span>${total}</span>` +
+    `<em>${esc(S.statsTimesUnit(total))}</em></span>` +
+    `<span class="st-meter"><i style="width:${pct}%"></i></span></span>`
+}
+
 /**
  * 切视图。除换列表内容，还要把窗口大小在"哪一屏"之间换一下：日历视图和其余视图
  * 各记各的尺寸，切回去就是上次拖好的样子。主进程负责存取（见 window:switch）——
  * 先把当前大小记到离开的那一屏，再套上要进的那一屏的。同一个分组之间切就不折腾窗口。
  *
- * 顺便把这一屏记进 ui.json，下次打开就落在这儿。已完成 / 垃圾桶主进程不记
+ * 顺便把这一屏记进 ui.json，下次打开就落在这儿。已完成 / 统计 / 垃圾桶主进程不记
  * （见 ipc 的 RESTORABLE_VIEWS），所以退出时停在那两屏不会改掉落脚点。
  */
 function setView(next: ViewId) {
   const from = viewSlot(view), to = viewSlot(next)
+  const enteringStats = next === 'stats' && view !== 'stats'
   view = next
+  // 从别的视图进统计页，周期回到当前这一期；在这一屏里搜索 / 清搜索不算重新进入，
+  // 保留刚才翻到的那一期。跨天的情况见 followToday。
+  if (enteringStats) periodAnchor = Date.now()
   // 详情栏收没收起是**按视图分组**记的：切到日历就把这一屏上次的样子换回来，
   // 切回普通列表也换回普通列表那份。分组没变（今天 → 最近 7 天之间切）就不动它
   if (from !== to) { detailCollapsed = detailBySlot[to]; applyPanes() }
@@ -1385,6 +1697,12 @@ function renderDetail() {
     `</span>` +
     repeatSelect('drepeat', t.startAt ?? today(), t.repeat) +
     (customFor === 'detail' ? customDays('dcustom') : '') +
+    // 周期任务：这个系列累计做过几次。勾完这一期详情栏会跟到下一期，数字当场 +1 ——
+    // 不用弹窗、不用通知，回头看一眼就知道自己攒下了什么
+    (() => {
+      const n = seriesDoneCount(tasks, t)
+      return n === null ? '' : `<span class="tag dcount">${esc(S.statsDoneTimes(n))}</span>`
+    })() +
     bits.map(b => `<span>${esc(b)}</span>`).join('')
 
   if (!typingNote) $('dbody').innerHTML = editing
@@ -1909,7 +2227,31 @@ document.addEventListener('click', async (e) => {
   const target = e.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-view]')
   if (nav) { setView(nav.dataset['view'] as ViewId); return }
-  // 列数那个 <select> 由下面的 change 处理：这里只把它让开，别当成任务行去处理  // 列数那个 <select> 由下面的 change 处理：这里只把它让开，别当成任务行去处理
+  // 全页共用的一份周期设置：换粒度就回到当前这一期，下面两块面板一起跟着变
+  const seg = target.closest<HTMLElement>('[data-period]')
+  if (seg) {
+    const k = seg.dataset['period'] as StatsPeriod
+    if (PERIOD_TABS.some(p => p.id === k)) {
+      periodKind = k; periodAnchor = Date.now(); render()
+      // 整个 #list 被重建了，焦点会掉回 body；键盘用户还得从头 Tab，放回刚按的那枚
+      document.querySelector<HTMLElement>(`.st-seg[data-period="${k}"]`)?.focus()
+    }
+    return
+  }
+  // 左右箭头翻一期。已经落在当前期时右箭头是 disabled，这里再挡一次
+  const step = target.closest<HTMLElement>('[data-period-step]')
+  if (step) {
+    const dir = Number(step.dataset['periodStep'])
+    if (dir > 0 && !periodView(tasks, periodKind, periodAnchor).hasNext) return
+    periodAnchor = shiftAnchor(periodAnchor, periodKind, dir)
+    render()
+    // 同上：焦点放回同一枚；右箭头到当前期会变 disabled，focus 不上就退回左边那枚
+    const same = document.querySelector<HTMLButtonElement>(`[data-period-step="${dir}"]`)
+    const other = document.querySelector<HTMLButtonElement>(`[data-period-step="${-dir}"]`)
+    ;(same && !same.disabled ? same : other)?.focus()
+    return
+  }
+  // 列数那个 <select> 由下面的 change 处理：这里只把它让开，别当成任务行去处理
   // 连续日历的「回到今天」：只滚回今天那一格，不重铺（接出来的日子留着）。
   // 顶栏那行月份由滚动事件自己跟上（scrollToToday 改了 scrollTop）
   if (target.closest('[data-caltoday]')) {
@@ -2564,6 +2906,9 @@ const DAY_RECHECK = 30_000
 function followToday() {
   if (!ready || !vault) return        // boot 还没画完 / 还在引导页上：没有日期可翻
   if (today() === shownDay) return
+  // 统计页跨天时周期要跟着新的一天走，否则会停在前一天/上一周；用户正翻旧期也认了，
+  // 新的一天就该回到当前这一期。
+  if (view === 'stats') periodAnchor = Date.now()
   render()                            // render 里会把 shownDay 更新成当天
 }
 setInterval(followToday, DAY_RECHECK)

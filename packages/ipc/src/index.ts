@@ -85,15 +85,15 @@ export const LEGACY_SLOT_KEYS: Partial<Record<WinSlot, readonly string[]>> = {
 }
 
 /**
- * 侧栏那 8 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
+ * 侧栏那 9 个列表。渲染进程的 VIEWS 只管图标和副标题，id 这一层放这儿 ——
  * 主进程要用它校验 ui.json 里存下的值（那个文件可能被手改，也可能是旧版本写的，
  * 读回来不能直接当合法视图用），窗口大小也要按视图分组。
  *
- * calendarFlow 是"连续日历"（日子一天接一天铺下去、上下无限滚，每行放几列由用户定）——
- * 侧栏顺序就是这一份的顺序（见渲染进程的 VIEWS）。
+ * calendarFlow 是"连续日历"（日子一天接一天铺下去、上下无限滚，每行放几列由用户定）；
+ * stats 是"统计"（周期性任务做过几次的回顾）。侧栏顺序就是这一份的顺序（见 VIEWS）。
  */
 export const VIEW_IDS = ['today', 'next7', 'next30', 'calendar7',
-                         'calendarFlow', 'all', 'done', 'trash'] as const
+                         'calendarFlow', 'all', 'done', 'stats', 'trash'] as const
 export type ViewId = typeof VIEW_IDS[number]
 export const isViewId = (x: unknown): x is ViewId => VIEW_IDS.includes(x as ViewId)
 
@@ -105,7 +105,7 @@ export const viewSlot = (v: ViewId): WinSlot =>
   v === 'calendar7' || v === 'calendarFlow' ? 'calendar' : 'other'
 
 /**
- * 值得"下次打开还停在这儿"的列表。已完成和垃圾桶是顺路看一眼就走的地方，
+ * 值得"下次打开还停在这儿"的列表。已完成、统计和垃圾桶是顺路看一眼就走的地方，
  * 退出时停在那儿不该变成下一次的落脚点 —— 记进去也没用，读的时候当没存过。
  */
 export const RESTORABLE_VIEWS: readonly ViewId[] =
@@ -248,10 +248,10 @@ export type Commands = {
   'ui:setDetailCollapsed': (slot: WinSlot, on: boolean) => boolean
   /**
    * 上次停在哪个列表，打开就回到那一屏（没存过 = 渲染进程的 DEFAULT_VIEW）。
-   * 已完成 / 垃圾桶不记，所以返回的一定是 RESTORABLE_VIEWS 里的一个
+   * 已完成 / 统计 / 垃圾桶不记，所以返回的一定是 RESTORABLE_VIEWS 里的一个
    */
   'ui:view': () => ViewId | null
-  /** 记下当前列表。已完成 / 垃圾桶不记（见 RESTORABLE_VIEWS），传进来就当没发生 */
+  /** 记下当前列表。已完成 / 统计 / 垃圾桶不记（见 RESTORABLE_VIEWS），传进来就当没发生 */
   'ui:setView': (view: ViewId) => void
   /**
    * 切到某一屏（视图分组）。主进程先把当前窗口大小记到**离开**的那一屏，

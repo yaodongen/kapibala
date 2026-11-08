@@ -16,6 +16,20 @@ const computed = (S: Strings): string[] => [
   S.menuSkipTo('Nov 9, Sun'),
   S.welcomeFailed('boom'),
   S.dayLabel(new Date(2026, 7, 26)),
+  // 统计那一屏带参数的文案：样例里不能有中文，否则会冤枉英文那份
+  S.statsTotalNote(9),
+  S.statsActiveDays(3),
+  S.statsHeatTip('Nov 2', 2),
+  S.statsSectionSub(6),
+  S.statsTimes(12),
+  S.statsTimesUnit(1),
+  S.statsTimesUnit(3),
+  S.statsExpectedTip(12, 15),
+  S.statsFirst('Oct 5'),
+  S.statsLast('Nov 2'),
+  S.statsDoneTimes(7),
+  S.statsAllTime(38),
+  S.statsMonthName(new Date(2026, 10, 1)),
 ]
 
 const flat = (S: Strings): Array<[string, string]> => {
@@ -55,6 +69,17 @@ describe('系统语言 → 界面语言', () => {
 })
 
 describe('两份文案', () => {
+  it('统计页统一说「周期性任务」，不再混用「重复任务」', () => {
+    const S = t('zh')
+    const statsTexts = [
+      S.statsSub, S.statsTotalNote(9), S.statsSeries, S.statsSeriesNote,
+      S.statsSection, S.statsEmpty, S.statsEmptySub,
+    ]
+    for (const [i, v] of statsTexts.entries())
+      expect(v, `stats[${i}]`).not.toContain('重复任务')
+    expect(S.statsSection).toContain('周期性任务')
+  })
+
   it('都没有空字符串', () => {
     for (const lang of LANGS)
       for (const [k, v] of flat(t(lang)))

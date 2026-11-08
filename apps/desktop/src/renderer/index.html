@@ -58,6 +58,11 @@ body{
 .app.side-collapsed .sidebar,
 .app.detail-collapsed .detailpane,
 .app.detail-collapsed .dresize{ display:none }
+/* 「统计」这一屏看标题就够，右侧详情栏整块不显示。只挂在这一屏上：
+   不动 ui.json 里按视图分组记下的收起偏好，切回任务列表详情栏照旧回来 */
+.app.stats-nopane{ --detail-w:0px }
+.app.stats-nopane .detailpane,
+.app.stats-nopane .dresize{ display:none }
 
 /* 收起/展开两侧栏的小按钮。箭头指向"要把它推到哪边"：侧边栏在左（« 收起、☰ 展开），
    详情栏在右（» 收起、« 展开）。两枚都不往窗口边缘浮 —— 左上角是红绿灯，
@@ -506,6 +511,194 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
 .empty{padding:56px 0; text-align:center; color:var(--dim); font-size:13px}
 .empty .big{font-size:34px; display:block; margin-bottom:10px; opacity:.5}
 
+/* ── 统计 ──
+   配色取自那张周期柱状图的参考稿：纯白底、极淡的冷灰绿空槽 #f5f9f8，
+   只有一种偏灰的深青绿 #407668 当重点色，文字近黑，分段控件用中性浅灰 #efefef。
+   整屏不铺绿底，留白和这一个颜色说话。变量挂在 .list.statsview 上，明暗各一份，
+   下面的规则只认 --st-*，不直接引用全局的 --accent / --border —— 换主题不会半新半旧。 */
+.list.statsview{
+  padding:10px 28px 48px; container-type:inline-size;
+  --st-bg:#ffffff; --st-panel:#ffffff; --st-line:#e8edeb;
+  --st-ink:#1d1d1f; --st-dim:#86868b;
+  /* 点阵五档：空槽 + 由浅到深四级，最深那档就是唯一重点色 */
+  --st-track:#f5f9f8; --st-l1:#e3f0ea; --st-l2:#b8d8cc;
+  --st-l3:#7fb09e; --st-l4:#407668;
+  --st-accent:#407668; --st-soft:#eef5f2; --st-seg-bg:#efefef;
+  --st-shadow:0 1px 3px rgba(29,29,31,.08);
+}
+@media (prefers-color-scheme:dark){
+  .list.statsview{
+    --st-bg:#202826; --st-panel:#1d2422; --st-line:#303a36;
+    --st-ink:#f2f2f4; --st-dim:#8e8e93;
+    --st-track:#28322e; --st-l1:#2f4b41; --st-l2:#447563;
+    --st-l3:#5f9f86; --st-l4:#7cc3a8;
+    --st-accent:#7cc3a8; --st-soft:#26352f; --st-seg-bg:#2a312e;
+    --st-shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+}
+.st-wrap{ max-width:820px; margin:0 auto; display:flex; flex-direction:column; gap:18px }
+.st-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px }
+.st-card{ display:flex; flex-direction:column; gap:2px; padding:14px 16px;
+          border:1px solid var(--st-line); border-radius:12px; background:var(--st-bg);
+          transition:border-color .12s ease, background .12s ease }
+/* 概览卡只是信息，不做成"能点"的样子：只换描边和极淡的底色 */
+.st-card:hover{ border-color:var(--st-accent); background:var(--st-soft) }
+.st-clabel{ font-size:11.5px; color:var(--st-dim); letter-spacing:.02em }
+.st-cnum{ font-size:30px; font-weight:600; line-height:1.15; letter-spacing:-.02em;
+          color:var(--st-accent); font-variant-numeric:tabular-nums }
+.st-cnote{ font-size:11px; color:var(--st-dim) }
+.st-panel{ border:1px solid var(--st-line); border-radius:12px; padding:16px 18px;
+           background:var(--st-panel) }
+.st-panelhead{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px }
+.st-panelhead b{ font-size:13px; font-weight:600; color:var(--st-ink) }
+.st-panelhead span{ margin-left:auto; font-size:11.5px; color:var(--st-dim) }
+/* 全页共用的一条周期设置：放在点阵和受它影响的两块面板之间 */
+.st-periodbar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+               padding:10px 14px; border:1px solid var(--st-line); border-radius:12px;
+               background:var(--st-bg) }
+.st-segs{ display:inline-flex; gap:2px; padding:3px; border:1px solid var(--st-line);
+          border-radius:9px; background:var(--st-seg-bg) }
+.st-seg{ font:inherit; font-size:12px; min-width:38px; padding:4px 10px; border:none;
+         border-radius:7px; background:transparent; color:var(--st-dim); cursor:default;
+         transition:background .12s ease, color .12s ease }
+.st-seg:hover:not(.on){ background:var(--st-soft); color:var(--st-accent) }
+/* 选中项靠白底凸起 + 阴影说话，文字回到近黑（和参考稿一致） */
+.st-seg.on{ background:var(--st-panel); color:var(--st-ink); font-weight:600;
+            box-shadow:var(--st-shadow) }
+.st-seg:focus-visible, .st-step:focus-visible{ outline:2px solid var(--st-accent); outline-offset:2px }
+.st-pnav{ display:flex; align-items:center; gap:8px; margin-left:auto }
+.st-pnav b{ font-size:12.5px; font-weight:600; color:var(--st-ink);
+            white-space:nowrap; font-variant-numeric:tabular-nums }
+.st-step{ flex:none; width:26px; height:26px; padding:0; border:1px solid var(--st-line);
+          border-radius:7px; background:var(--st-panel); color:var(--st-dim); font:inherit;
+          font-size:17px; line-height:1; cursor:default }
+.st-step:hover:not([disabled]){ border-color:var(--st-accent); color:var(--st-accent);
+                               background:var(--st-soft) }
+.st-step[disabled]{ opacity:.35 }
+/* 胶囊柱：淡色底槽 + 从底部长上来的实心填充。月视图 30 根也靠 flex 平分 */
+.st-chart{ display:flex; align-items:stretch; gap:4px; height:150px }
+.st-col{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; align-items:center }
+.st-track{ position:relative; flex:1; width:100%; max-width:34px; overflow:hidden;
+           border-radius:12px; background:var(--st-track);
+           transition:box-shadow .12s ease }
+.st-col:hover .st-track{ box-shadow:0 0 0 2px var(--st-l2) }
+.st-col:hover .st-fill{ filter:brightness(1.08) }
+.st-fill{ position:absolute; left:0; right:0; bottom:0; border-radius:12px;
+          background:var(--st-accent); transition:height .18s ease }
+.st-x{ height:14px; font-size:10.5px; line-height:14px; color:var(--st-ink);
+       white-space:nowrap; font-variant-numeric:tabular-nums }
+/* GitHub 式贡献图：左侧一列周几标签，右侧滚动最近一年的 53 列小格子，
+   顶上一行月份标签。--st-cols 由渲染层写在外层，月份行和格子行共用它才对得齐。 */
+.st-heat{ display:grid; grid-template-columns:38px minmax(0,1fr);
+          column-gap:6px; row-gap:6px }
+.st-months{ grid-column:2; grid-row:1; display:grid;
+            grid-template-columns:repeat(var(--st-cols,53),minmax(0,1fr));
+            column-gap:2px; height:14px; font-size:10.5px; color:var(--st-dim) }
+.st-months span{ white-space:nowrap }
+/* 月份名比单列宽，默认往右溢出；末尾那个改成贴着列右缘往左写，别捅出面板 */
+.st-months span.end{ justify-self:end }
+.st-dows{ grid-column:1; grid-row:2; display:grid;
+          grid-template-rows:repeat(7,minmax(0,1fr)); row-gap:3px;
+          font-size:10.5px; color:var(--st-dim); text-align:right }
+.st-dows span{ display:flex; align-items:center; justify-content:flex-end }
+/* 一列 = 一周，一行 = 同一个周几（DOM 顺序见 app.ts 的 statsHtml）。
+   格子封顶 22px 并在列里居中，53 列时实际约 12px，窄列下 min(22px,100%) 自己会缩。 */
+.st-heatgrid{ grid-column:2; grid-row:2; display:grid;
+              grid-template-columns:repeat(var(--st-cols,53),minmax(0,1fr));
+              gap:3px 2px }
+.st-cell{ display:block; width:min(22px,100%); min-width:0; aspect-ratio:1;
+          justify-self:center; border-radius:4px; background:var(--st-track) }
+/* 悬浮给一个明确的「选中」态：描边 + 微微放大。放大后会压到邻格上，
+   z-index 提一层才不会被邻格盖住。图例里那几颗小方块不在这儿，不吃这套 */
+.st-heatgrid .st-cell{ position:relative; transition:transform .1s ease, box-shadow .1s ease }
+/* 双环：先用面板底色描一圈把格子和外圈隔开，再上强调色。
+   完成次数最多那档格子本身就是深色，单圈同色描边会看不见 —— 垫一圈底就都认得出。 */
+.st-heatgrid .st-cell:hover{
+  transform:scale(1.2); z-index:2;
+  box-shadow:0 0 0 2px var(--st-panel), 0 0 0 4px var(--st-accent), var(--st-shadow)
+}
+.st-cell.lv1{ background:var(--st-l1) }
+.st-cell.lv2{ background:var(--st-l2) }
+.st-cell.lv3{ background:var(--st-l3) }
+.st-cell.lv4{ background:var(--st-l4) }
+/* 还没到的日子：只留一圈极淡的边框。它是空白，不是"欠了几天" */
+.st-cell.future{ background:transparent; box-shadow:inset 0 0 0 1px var(--st-line); opacity:.55 }
+/* 左下写口径，右下 Less → More 五档图例 */
+.st-legend{ display:flex; align-items:center; justify-content:space-between;
+            gap:10px; flex-wrap:wrap; margin-top:12px;
+            font-size:10.5px; color:var(--st-dim) }
+.st-scale{ display:inline-flex; align-items:center; gap:4px }
+.st-scale > span:last-child{ margin-left:2px }
+.st-legend .st-cell{ width:11px; height:11px; flex:none; aspect-ratio:auto; justify-self:auto }
+/* 每件重复的事：这一屏没有详情栏，整行只是信息；悬浮仍有明确的选中感 */
+.st-rows{ display:flex; flex-direction:column; gap:8px }
+.st-row{ display:flex; flex-direction:column; gap:7px; width:100%; padding:10px 12px;
+         border:1px solid var(--st-line); border-radius:10px; background:var(--st-bg);
+         color:var(--st-ink); font:inherit; text-align:left; cursor:default;
+         transition:background .12s ease, border-color .12s ease, box-shadow .12s ease }
+.st-row:hover{
+  background:var(--st-soft);
+  border-color:var(--st-accent);
+  box-shadow:inset 3px 0 0 var(--st-accent), var(--st-shadow)
+}
+/* 行里的重复规则 / 同名任务标签也换成同一套绿，别突然跳回侧栏的棕色 */
+.statsview .tag{ background:var(--st-soft); color:var(--st-accent) }
+.st-rhead{ display:flex; align-items:baseline; gap:10px; min-width:0 }
+.st-rtitle{ flex:1; min-width:0; font-size:13.5px; font-weight:500;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.st-rnum{ flex:none; font-size:12.5px; font-weight:600; color:var(--st-accent);
+          font-variant-numeric:tabular-nums; white-space:nowrap }
+/* 本期一次都没做过的压淡一档：是事实，不是催你 */
+.st-rnum.zero{ color:var(--st-dim) }
+/* 「完成 12/15 次」。数字分三层：完成数最大用重点色，斜杠和分母退到次要色，
+   底下一道 4px 细条把比例说出来，做满时颜色深一档 —— 不弹窗、不打卡，只是看得清。
+   align-self:center 是因为 .st-rhead 用 baseline 排标题，整块徽标不适合按基线对齐。 */
+.st-score{ flex:none; align-self:center; display:flex; flex-direction:column;
+           align-items:flex-end; gap:5px; min-width:110px; margin-left:auto }
+.st-scoreline{ display:flex; align-items:baseline; gap:3px; white-space:nowrap;
+               font-variant-numeric:tabular-nums }
+.st-scoreline em{ font-style:normal; font-size:10.5px; color:var(--st-dim) }
+.st-scoreline b{ font-size:16px; font-weight:650; line-height:1; color:var(--st-accent) }
+.st-scoreline b.zero{ color:var(--st-dim) }
+.st-scoreline i{ font-style:normal; font-size:11.5px; color:var(--st-dim);
+                 opacity:.6; margin:0 1px }
+.st-scoreline > span{ font-size:12.5px; color:var(--st-dim) }
+.st-meter{ display:block; width:100%; height:5px; border-radius:3px;
+           background:var(--st-track); overflow:hidden }
+.st-meter i{ display:block; height:100%; border-radius:3px; background:var(--st-l3);
+             transition:width .18s ease }
+.st-score.full .st-meter i{ background:var(--st-accent) }
+/* 每行用和「完成分布」同款的胶囊柱，桶数 / 顺序 / 周期完全联动，只看这一组。
+   复用 .st-track / .st-fill，所以配色和上面那排一模一样；空桶就是淡槽。 */
+.st-rowchart{ display:flex; align-items:stretch; gap:4px; height:56px; margin:1px 0 }
+.st-rowchart .st-track{ border-radius:10px }
+.st-rowchart .st-fill{ border-radius:10px }
+.st-rmeta{ font-size:11px; color:var(--st-dim); font-variant-numeric:tabular-nums }
+.st-empty{ display:flex; flex-direction:column; gap:4px; padding:22px 4px;
+           text-align:center; font-size:12.5px; color:var(--st-dim) }
+.st-empty b{ font-size:13px; font-weight:500; color:var(--st-ink) }
+/* 统计页隐藏详情栏后，列表宽度只由窗口和侧栏决定：最小窗口 820 时内容宽约 533px，
+   三张卡一行、7 / 30 / 12 根柱和排行榜都放得下，所以不额外做紧凑版式。
+   唯一要照顾的是月份标签：末尾那个右对齐后文字往左伸，窄容器里会和前一个月贴住。
+   near-end 由 app.ts 标在「末尾标签的前一个」上，容器窄到 4 列放不下两段文字时藏掉。 */
+@container (max-width:600px){
+  .st-months span.near-end{ display:none }
+}
+@media (prefers-reduced-motion:reduce){
+  .st-card, .st-row, .st-heatgrid .st-cell, .st-seg, .st-track, .st-fill,
+  .st-meter i{ transition:none }
+}
+/* 统计页的即时提示：原生 title 要等浏览器自己那几秒，改成 pointerover 立刻填字。
+   挂在 body 上、fixed 定位，不受列表滚动和面板裁剪影响；pointer-events:none 才不会
+   抢走柱子的 :hover 高亮。反色气泡用全局主题变量，明暗自动跟着走。 */
+.st-tip{
+  position:fixed; left:0; top:0; z-index:90; pointer-events:none;
+  padding:5px 9px; border-radius:6px; white-space:nowrap;
+  background:var(--text); color:var(--bg);
+  font-size:11.5px; line-height:1.4; font-variant-numeric:tabular-nums;
+  box-shadow:0 4px 14px rgba(0,0,0,.2)
+}
+
 /* 桌面版新增 */
 .app{ -webkit-user-select:none; user-select:none }
 .sidebar{ padding-top:34px }            /* 让出标题栏（macOS 是红绿灯，Windows 是那一条 34px 的按钮带） */
@@ -631,7 +824,8 @@ body.resizing, body.resizing *{ cursor:col-resize !important }
    只有详情栏收起后主区顶到右边缘，标题行右边那枚按钮会钻到系统按钮底下 ——
    给它让出三个按钮的宽度（Windows 11 实测约 138px，取整 150）。
    macOS 的红绿灯在左上角，所以那边不用这条，靠侧边栏自己的 padding-top 避开 */
-html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
+html[data-os="win"] .app.detail-collapsed header,
+html[data-os="win"] .app.stats-nopane header{ padding-right:150px }
 </style>
 </head>
 <body>
@@ -789,6 +983,8 @@ html[data-os="win"] .app.detail-collapsed header{ padding-right:150px }
   </div>
 </div>
 
+<!-- 统计页的即时悬浮提示：原生 title 要等浏览器自己那几秒，这里由 pointerover 立刻填字 -->
+<div class="st-tip" id="stattip" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

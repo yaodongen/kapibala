@@ -74,7 +74,7 @@ type UiState = {
    */
   detailCollapsedBySlot?: Partial<Record<WinSlot, boolean>>
   detailCollapsed?: boolean
-  /** 上次停在哪个列表，打开就回到那一屏。已完成 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
+  /** 上次停在哪个列表，打开就回到那一屏。已完成 / 统计 / 垃圾桶不记（见 ipc 的 RESTORABLE_VIEWS） */
   view?: ViewId
   /**
    * 每个视图分组各记一套窗口大小（宽、高）。见 ipc 里的 WinSlot。
@@ -661,7 +661,7 @@ handle('ui:setDetailCollapsed', (slot: WinSlot, on: boolean) => {
  * 撤掉的视图（自定义日历 / 14d 等）在这里折算到接替它的那一屏，别让用户的下次打开莫名跳回今天。
  */
 handle('ui:view', () => restorableView(readUi().view))
-/** 切列表就记一笔。已完成 / 垃圾桶不记：那是顺路看一眼的地方，不该变成下次的落脚点 */
+/** 切列表就记一笔。已完成 / 统计 / 垃圾桶不记：那是顺路看一眼的地方，不该变成下次的落脚点 */
 handle('ui:setView', (next: ViewId) => {
   if (!isViewId(next)) throw new Error(`不认识的列表：${String(next)}`)
   if (!isRestorableView(next)) return
@@ -755,7 +755,7 @@ function openExternal(url: string) {
 function createWindow() {
   // 打开就回到上次那一屏列表（渲染进程 boot() 会跟着落到同一个视图），所以第一屏的尺寸
   // 也用那一屏记下的 —— 否则窗口先按列表大小画出来，等渲染进程报上来再跳一下。
-  // 没记过或者记的是已完成 / 垃圾桶，就还是"其余视图"那套尺寸
+  // 没记过或者记的是已完成 / 统计 / 垃圾桶，就还是"其余视图"那套尺寸
   const start = restorableView(readUi().view)
   winSlot = start ? viewSlot(start) : 'other'
   const saved = slotKey(readUi().winSize, winSlot)

@@ -146,12 +146,41 @@ Kapibala does not work that way:
 **Calendar**
 
 - Continuous calendar (the default), Today, Next 7 days, Next 30 days, Calendar (7d), All tasks,
-  Completed, Trash
+  Completed, **Stats**, Trash
 - Drag to reschedule; the time of day stays
 - Mark **Important** (red bar, top of its day) or **In progress** ("Doing" badge); several tasks can
   be in progress at once
 - One click to complete, one click to delete — into the trash, not gone for good; the trash empties
   in one click
+
+**Looking back**
+
+- **Stats** counts how many times each recurring task has been done: a total across the vault, a
+  GitHub-style contribution grid of the **last 12 months** (53 weeks of small squares, with month
+  names above, weekday labels on the left and a five-step legend below), and one row per recurring
+  task with its count for the selected period, its all-time count, and its first and last completion
+- Recurring series stay together even if you rename one halfway through; tasks you keep adding by
+  hand under the same title are not treated as recurring, though their completions still count in
+  the totals
+- Select any occurrence and the detail pane shows the running count for that series, so it goes up
+  as soon as you tick one off
+- One shared **Week / Month / Year** switch with a period title and previous/next arrows: capsule
+  bars spread completions over 7 days, the days of a month or 12 months. The recurring-task list is
+  sorted by that same period's count, and each row carries the same capsule bars in the same
+  positions — counting only that task, so you can see exactly which days it was done
+- Each row also reads **"done 12 of 15 times"** with a thin progress bar: the denominator is what
+  its repeat rule schedules in the selected period up to now (for a past period, up to its end).
+  Earlier periods are not carried over and days still to come are not counted, so it never claims
+  you fell behind; a series without a fixed rule just shows its count
+- Tasks with a repeat cycle **longer than 7 days** (every 17 days, monthly, yearly) are left out
+  of this list; their completions still count in the totals and the grid
+- **Deleted or purged** occurrences never count as completions and do not take part in grouping;
+  the rule-based "of N" denominator still counts the slot the rule scheduled for them. A series
+  whose pending occurrence was trashed, with nothing left to do, leaves the list too — past
+  completions stay in the totals and the grid
+- The detail pane stays out of the way on this screen — titles are enough; it is back on every
+  other view, and while searching on this one
+- No streaks, and nothing says you "broke your chain" — days still to come are simply left blank
 
 **App**
 
